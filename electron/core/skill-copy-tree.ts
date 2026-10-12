@@ -12,6 +12,7 @@ export interface SkillTreeEntry {
   mode?: number;
   target?: string;
   targetKind?: "file" | "directory";
+  replacement?: Buffer;
 }
 
 export interface SkillTreeAnalysis {
@@ -113,7 +114,7 @@ function executableCompatibility(relative: string, content: Buffer): string | un
   return `脚本 ${relative} 会被复制并保留可执行权限；解释器和脚本内部依赖未执行验证`;
 }
 
-export async function analyzeSkillTree(directory: string): Promise<SkillTreeAnalysis> {
+export async function analyzeSkillTree(directory: string, replacements: ReadonlyMap<string, string> = new Map()): Promise<SkillTreeAnalysis> {
   const root = await fs.realpath(directory);
   const rootStat = await fs.stat(root);
   if (!rootStat.isDirectory()) throw new Error(`Skill 源路径不是目录：${directory}`);
@@ -196,12 +197,15 @@ export async function analyzeSkillTree(directory: string): Promise<SkillTreeAnal
     try {
       const current = await handle.stat();
       if (!current.isFile()) throw new Error(`文件 ${relative} 在检查时已变成非普通文件`);
-      const content = await handle.readFile();
-      if (content.length !== current.size) throw new Error(`文件 ${relative} 在检查时发生变化，请重新检查`);
-      inspectSecret(relative, content);
+      const original = await handle.readFile();
+      if (original.length !== current.size) throw new Error(`文件 ${relative} 在检查时发生变化，请重新检查`);
+      inspectSecret(relative, original);
+      const replacement = replacements.has(relative) ? Buffer.from(replacements.get(relative)!, "utf8") : undefined;
+      const content = replacement ?? original;
+      if (replacement && (bytes += replacement.length - original.length) > SKILL_TREE_LIMITS.bytes) throw new Error("修复后的 Skill 超过 20 MB 限制");
       const mode = current.mode & 0o777;
-      entries.push({ kind: "file", relative, source: canonical, mode });
-      hash.update(`file:${relative}:${mode}:${current.size}\0`);
+      entries.push({ kind: "file", relative, source: canonical, mode, replacement });
+      hash.update(`file:${relative}:${mode}:${content.length}\0`);
       hash.update(content);
       if ((mode & 0o111) !== 0) {
         const compatibility = executableCompatibility(relative, content);
@@ -259,7 +263,8 @@ export async function copySkillTree(analysis: SkillTreeAnalysis, destination: st
         catch (error) { throw new Error(`无法保留外部依赖链接 ${entry.relative} → ${entry.target}：${(error as NodeJS.ErrnoException).code ?? (error as Error).message}`); }
       } else {
         try {
-          await fs.copyFile(entry.source, output, constants.COPYFILE_EXCL);
+          if (entry.replacement) await fs.writeFile(output, entry.replacement, { flag: "wx" });
+          else await fs.copyFile(entry.source, output, constants.COPYFILE_EXCL);
           if (entry.mode !== undefined) await fs.chmod(output, entry.mode);
         } catch (error) {
           const code = (error as NodeJS.ErrnoException)?.code;

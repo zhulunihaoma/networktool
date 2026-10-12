@@ -77,6 +77,7 @@ export interface SkillVerification {
   rulesDate: string;
   ruleSource?: { label: string; url: string };
   sourceHash?: string;
+  expectedHash?: string;
   destinationHash?: string;
   checks: SkillCheck[];
 }

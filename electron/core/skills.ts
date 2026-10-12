@@ -65,7 +65,7 @@ async function readDocument(file: string) {
   } finally { await handle.close(); }
 }
 export class SkillScanner {
-  private plans = new Map<string, { ids: string[]; target: string; expires: number; hashes: Map<string, string>; rows: Map<string, SkillCopyPreview["items"][number]>; existingFingerprints: Map<string, string> }>();
+  private plans = new Map<string, { ids: string[]; target: string; expires: number; hashes: Map<string, string>; expectedHashes: Map<string, string>; rows: Map<string, SkillCopyPreview["items"][number]>; existingFingerprints: Map<string, string> }>();
   private deletePlans = new Map<string, { ids: string[]; expires: number; fingerprints: Map<string, string>; rows: Map<string, SkillDeletePreview["items"][number]> }>();
   private extraRoots: string[] = [];
   private installedDirs = new Set<string>();
@@ -238,7 +238,20 @@ export class SkillScanner {
   private async inspect(directory: string) {
     return (await analyzeSkillTree(directory)).hash;
   }
-  private async review(directory: string, target: string): Promise<SkillVerification> {
+  private async prepareCopy(directory: string, target: string) {
+    const source = await analyzeSkillTree(directory);
+    const relative = path.join("agents", "openai.yaml");
+    const entry = source.entries.find(entry => entry.relative === relative);
+    if (!entry) return { source, output: source, repairs: [] as string[] };
+    // Do not rewrite a configuration owned by an external dependency.
+    if (entry.kind !== "file") return { source, output: source, repairs: [] as string[] };
+    const original = await readDocument(entry.source);
+    const metadata = convertOpenaiMetadata(original, target, true);
+    if (!metadata.changes.length) return { source, output: source, repairs: [] as string[] };
+    const output = await analyzeSkillTree(directory, new Map([[relative, metadata.text]]));
+    return { source, output, repairs: metadata.changes };
+  }
+  private async review(directory: string, target: string, autoRepair = true): Promise<SkillVerification> {
     let document: string;
     try { document = await fs.realpath(path.join(directory, "SKILL.md")); }
     catch (error) {
@@ -255,7 +268,10 @@ export class SkillScanner {
     try {
       const sidecar = await fs.realpath(path.join(directory, "agents/openai.yaml"));
       sidecarText = await readDocument(sidecar);
-      result.warnings.push(...convertOpenaiMetadata(sidecarText, target).warnings);
+      const relative = path.relative(await fs.realpath(directory), sidecar);
+      const metadata = convertOpenaiMetadata(sidecarText, target, autoRepair && !!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
+      result.warnings.push(...metadata.warnings);
+      result.changes.push(...metadata.changes);
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
     const mcpReferences = [...new Set([...text.matchAll(/\bmcp__[A-Za-z0-9_-]+\b/gi)].map(match => match[0]))].slice(0, 20);
     const authVariables = [...new Set([...text.matchAll(/\b[A-Z][A-Z0-9_]*(?:_API_KEY|_TOKEN|_SECRET|_PASSWORD)\b/g)].map(match => match[0]))].slice(0, 20);
@@ -269,7 +285,8 @@ export class SkillScanner {
       checkedAt: new Date().toISOString(), rulesDate: SKILL_RULES_DATE, ruleSource: SKILL_RULES[target],
       checks: [
         { label: "复制目录", state: "passed", detail: `已核实默认用户级目录 ~/${definition.target}；依据：${definition.directorySource.label}（${SKILL_TARGETS_CHECKED_AT}）。实际发现状态另行检查` },
-        { label: "基础格式", state: "passed", detail: "名称、说明和 YAML 结构通过检查；所有文件原样保留" },
+        { label: "基础格式", state: "passed", detail: result.changes.length ? "名称、说明和 YAML 结构通过检查；明确的元信息层级错误将在目标副本自动修复" : "名称、说明和 YAML 结构通过检查；文件内容保持原样" },
+        ...result.changes.map(detail => ({ label: "自动修复计划", state: "passed" as const, detail })),
         { label: "目标规则", state: !SKILL_RULES[target] ? "unverified" : result.warnings.length ? "warning" : "passed", detail: SKILL_RULES[target] ? "已按内置文档规则比对；本机版本及运行结果另行验证" : "尚无该工具的专属规则，仅完成通用规范检查" },
         ...result.warnings.map(detail => detail === "仅完成通用规范检查，该目标的专属加载规则尚未核实"
           ? { label: "目标兼容性", state: "unverified" as const, detail }
@@ -287,6 +304,7 @@ export class SkillScanner {
     if (!destination) throw new Error("不支持的目标工具");
     const preview: SkillCopyPreview = { token: randomUUID(), target, path: destination.path, items: [] };
     const hashes = new Map<string, string>();
+    const expectedHashes = new Map<string, string>();
     const existingFingerprints = new Map<string, string>();
     const sourceByDestinationName = new Map<string, { hash: string; name: string }>();
     const supported = destination.copySupported;
@@ -300,20 +318,29 @@ export class SkillScanner {
         if (!supported) throw new Error(destination.blockedReason ?? "目标目录加载规则未核实，暂不开放直接复制");
         await this.safeTarget(destination.path);
         const final = path.join(destination.path, path.basename(item.path));
-        const source = await analyzeSkillTree(item.path);
+        if (path.resolve(final) === path.resolve(item.path)) {
+          row.status = "skipped";
+          row.reason = "来源就是目标安装位置；源文件保持不变，未在原位置自动修改";
+          continue;
+        }
+        const prepared = await this.prepareCopy(item.path, target);
+        const source = prepared.source;
+        const expectedHash = prepared.output.hash;
         const destinationName = path.basename(item.path);
         const duplicate = sourceByDestinationName.get(destinationName);
         if (duplicate) {
-          if (duplicate.hash !== source.hash) throw new Error(`本次选择中有多个目录名为 ${destinationName} 的 Skill，内容不同，无法写入同一目标目录；请分开复制并先整理其中一个名称`);
+          if (duplicate.hash !== expectedHash) throw new Error(`本次选择中有多个目录名为 ${destinationName} 的 Skill，内容不同，无法写入同一目标目录；请分开复制并先整理其中一个名称`);
           row.status = "skipped";
           row.reason = `与本次已选 Skill「${duplicate.name}」内容一致，目标只需复制一份`;
           row.verification = { checkedAt: new Date().toISOString(), rulesDate: SKILL_RULES_DATE, sourceHash: source.hash, checks: [{ label: "批次同名检查", state: "passed", detail: row.reason }] };
           continue;
         }
-        sourceByDestinationName.set(destinationName, { hash: source.hash, name: item.name });
-        row.changes.push(...source.changes);
+        sourceByDestinationName.set(destinationName, { hash: expectedHash, name: item.name });
+        row.changes.push(...source.changes, ...prepared.repairs);
         row.warnings.push(...source.warnings);
-        row.verification = await this.review(item.path, target);
+        row.verification = await this.review(item.path, target, prepared.repairs.length > 0);
+        row.verification.sourceHash = source.hash;
+        row.verification.expectedHash = expectedHash;
         row.verification.checks.push(...source.warnings.map(detail => ({ label: "外部依赖", state: "warning" as const, detail })));
         row.warnings = [...new Set([...row.warnings, ...row.verification.checks.filter(check => check.state === "warning").map(check => check.detail)])];
         if (row.verification.checks.some(check => check.state === "failed")) {
@@ -331,9 +358,10 @@ export class SkillScanner {
           try { destinationHash = await this.inspect(final); }
           catch (error) { destinationProblem = (error as Error).message; }
           hashes.set(id, source.hash);
-          if (destinationHash === source.hash) {
+          expectedHashes.set(id, expectedHash);
+          if (destinationHash === expectedHash) {
             row.status = "skipped";
-            row.reason = "目标已存在且与源内容一致，未重复复制";
+            row.reason = prepared.repairs.length ? "目标已存在且与自动修复后的预期内容一致，未重复复制" : "目标已存在且与源内容一致，未重复复制";
             row.verification.sourceHash = source.hash;
             row.verification.destinationHash = destinationHash;
             row.verification.checks.unshift({ label: "已有文件完整性", state: "passed", detail: row.reason });
@@ -349,6 +377,7 @@ export class SkillScanner {
           continue;
         } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
         hashes.set(id, source.hash);
+        expectedHashes.set(id, expectedHash);
         row.warnings = row.verification.checks.filter(check => check.state === "warning").map(check => check.detail);
         if (row.verification.checks.some(check => check.state === "failed")) {
           row.reason = row.verification.checks.filter(check => check.state === "failed").map(check => check.detail).join("；");
@@ -358,7 +387,7 @@ export class SkillScanner {
       } catch (error) { row.reason = (error as Error).message; }
     }
     this.plans.clear();
-    this.plans.set(preview.token, { ids: [...ids], target, expires: Date.now() + 10 * 60_000, hashes, rows: new Map(preview.items.map(row => [row.id, row])), existingFingerprints });
+    this.plans.set(preview.token, { ids: [...ids], target, expires: Date.now() + 10 * 60_000, hashes, expectedHashes, rows: new Map(preview.items.map(row => [row.id, row])), existingFingerprints });
     return preview;
   }
   async copy(ids: string[], target: string, token?: string, _autoConvert = false): Promise<SkillCopyResult[]> {
@@ -378,7 +407,7 @@ export class SkillScanner {
         const item = this.snapshot.get(id);
         if (!item) { results.push({ name: id, status: "failed", message: "仅允许复制最近扫描结果" }); continue; }
         const destinationSkill = path.join(destination.path, path.basename(item.path));
-        if (path.resolve(item.path) === path.resolve(destination.path) || path.resolve(destination.path).startsWith(path.resolve(item.path) + path.sep)) {
+        if (path.resolve(item.path) === path.resolve(destinationSkill) || path.resolve(item.path) === path.resolve(destination.path) || path.resolve(destination.path).startsWith(path.resolve(item.path) + path.sep)) {
           results.push({ name: item.name, status: "skipped", message: "来源与目标相同或目标位于来源内" }); continue;
         }
         try {
@@ -388,19 +417,24 @@ export class SkillScanner {
             continue;
           }
           if (!plan.hashes.has(id)) { results.push({ name: item.name, status: "skipped", message: previewRow?.reason ?? "检查未通过或目标已存在，未安装", verification: previewRow?.verification }); continue; }
-          const sourceAnalysis = await analyzeSkillTree(item.path);
+          const prepared = await this.prepareCopy(item.path, target);
+          const sourceAnalysis = prepared.source;
           const sourceHash = plan.hashes.get(id)!;
+          const expectedHash = plan.expectedHashes.get(id)!;
           if (sourceAnalysis.hash !== sourceHash) throw new Error("源文件、链接目标或权限已变化，请重新检查并确认");
+          if (prepared.output.hash !== expectedHash) throw new Error("自动修复后的预期内容已变化，请重新检查并确认");
           const temporary = await fs.mkdtemp(path.join(destination.path, ".skill-copy-"));
           const staged = path.join(temporary, path.basename(item.path));
           let backupPath: string | undefined;
           try {
-            await copySkillTree(sourceAnalysis, staged);
+            await copySkillTree(prepared.output, staged);
             const stagedAnalysis = await analyzeSkillTree(staged);
-            if (stagedAnalysis.hash !== sourceHash) throw new Error("暂存副本与检查时的源内容不一致，未安装；请重新检查");
-            const verification = await this.review(staged, target);
+            if (stagedAnalysis.hash !== expectedHash) throw new Error("暂存副本与检查时的预期内容不一致，未安装；请重新检查");
+            if (await this.inspect(item.path) !== sourceHash) throw new Error("源文件在复制期间发生变化，未安装；请重新检查");
+            const verification = await this.review(staged, target, false);
             if (verification.checks.some(check => check.state === "failed")) throw new Error("复制后的资源检查失败");
             verification.checks.push(...sourceAnalysis.changes.map(detail => ({ label: "符号链接处理", state: "passed" as const, detail })));
+            verification.checks.push(...prepared.repairs.map(detail => ({ label: "自动修复", state: "passed" as const, detail })));
             verification.checks.push(...sourceAnalysis.warnings.map(detail => ({ label: "外部依赖", state: "warning" as const, detail })));
             let destinationHash = "";
             await this.safeTarget(destination.path);
@@ -443,7 +477,7 @@ export class SkillScanner {
                 published.push(output);
               }
               destinationHash = await this.inspect(destinationSkill);
-              if (destinationHash !== sourceHash) throw new Error("目标文件与源文件不一致，已撤销本次复制");
+              if (destinationHash !== expectedHash) throw new Error("目标文件与预期副本不一致，已撤销本次复制");
             } catch (error) {
               // Only remove our entries; never recursively delete the destination.
               for (const output of published) await fs.rm(output, { recursive: true, force: true });
@@ -456,9 +490,10 @@ export class SkillScanner {
             }
             await fs.rm(temporary, { recursive: true, force: true }).catch(() => undefined);
             verification.sourceHash = sourceHash;
+            verification.expectedHash = expectedHash;
             verification.destinationHash = destinationHash;
-            verification.checks.unshift({ label: "完整性", state: "passed", detail: "源 Skill 可访问内容与目标副本哈希一致；文件内容和可执行权限已核对，内部链接已展开，外部链接按依赖保留" });
-            results.push({ name: item.name, status: "copied", destination: destinationSkill, backup: backupPath, message: backupPath ? `旧版已备份到 ${backupPath}，新副本已安装并通过完整性校验` : "已复制并通过完整性校验；具体兼容性和依赖状态见下方", verification });
+            verification.checks.unshift({ label: "完整性", state: "passed", detail: prepared.repairs.length ? "目标副本与自动修复计划的预期哈希一致；源文件未改动，仅修复列出的元信息层级，说明、资源和可执行权限已核对" : "源 Skill 可访问内容与目标副本哈希一致；文件内容和可执行权限已核对，内部链接已展开，外部链接按依赖保留" });
+            results.push({ name: item.name, status: "copied", destination: destinationSkill, backup: backupPath, message: backupPath ? `旧版已备份到 ${backupPath}，新副本已安装并通过完整性校验` : prepared.repairs.length ? "已自动修复目标副本并通过完整性校验；源文件保持不变" : "已复制并通过完整性校验；具体兼容性和依赖状态见下方", verification });
           }
           catch (error) {
             await fs.rm(temporary, { recursive: true, force: true });

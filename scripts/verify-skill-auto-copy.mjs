@@ -117,8 +117,29 @@ try {
 
   for (const [name, content] of Object.entries(sources)) assert.equal(await fs.readFile(path.join(sourceRoot, name, "SKILL.md"), "utf8"), content);
   assert.equal(await fs.readFile(path.join(sourceRoot, "grill-me/agents/openai.yaml"), "utf8"), sidecar);
+
+  // A malformed optional interface is repaired automatically in the target copy.
+  const repairSource = path.join(sourceRoot, "repair");
+  const repairMetadata = 'interface:\ndisplay_name: "Repair"\nshort_description: "Repair fixture"\ndefault_prompt: "Use repair"\npolicy:\n  allow_implicit_invocation: false\n';
+  await fs.mkdir(path.join(repairSource, "agents"), { recursive: true });
+  await fs.writeFile(path.join(repairSource, "SKILL.md"), "---\nname: repair\ndescription: Repair fixture\n---\n# Repair\n");
+  await fs.writeFile(path.join(repairSource, "agents/openai.yaml"), repairMetadata);
+  await page.getByRole("button", { name: "重新扫描", exact: true }).click();
+  await expect(page.getByRole("button", { name: "重新扫描", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "WisCode", exact: true }).click();
+  await rows.filter({ has: page.getByRole("button", { name: /^repair / }) }).locator(".skill-row-copy").click();
+  await dialog.locator("select").selectOption("wiscode");
+  await expect(dialog.getByText("自动修复后复制", { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "确认复制（1）", exact: true })).toBeEnabled();
+  if (process.env.NETWORK_LENS_SKILL_SHOTS_DIR) await dialog.screenshot({ path: path.join(process.env.NETWORK_LENS_SKILL_SHOTS_DIR, "skill-auto-repair.png") });
+  await dialog.getByRole("button", { name: "确认复制（1）", exact: true }).click();
+  await expect(page.getByText("自动修复：通过", { exact: true })).toBeVisible();
+  const repairedMetadata = await fs.readFile(path.join(home, ".wiscode/skills/repair/agents/openai.yaml"), "utf8");
+  assert.match(repairedMetadata, /interface:\n  display_name:/);
+  assert.match(repairedMetadata, /policy:\n  allow_implicit_invocation: false/);
+  assert.equal(await fs.readFile(path.join(repairSource, "agents/openai.yaml"), "utf8"), repairMetadata);
   assert.deepEqual(errors, []);
-  console.log("Verified: automatic preview, exact block reason, mixed batch, original copy, same-name backup update, cleanup preview and restore, source preservation; no renderer errors.");
+  console.log("Verified: automatic preview and metadata repair, exact block reason, mixed batch, original copy, same-name backup update, cleanup preview and restore, source preservation; no renderer errors.");
 } finally {
   if (app) await app.close();
   await fs.rm(temporary, { recursive: true, force: true });

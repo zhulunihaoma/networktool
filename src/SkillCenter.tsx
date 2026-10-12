@@ -15,6 +15,7 @@ import {
   Trash2,
   RotateCcw,
   TriangleAlert,
+  X,
 } from "lucide-react";
 import Modal from "./Modal";
 import type { DesktopAPI } from "./shared/types";
@@ -31,7 +32,7 @@ import type {
 function VerificationDetails({ value }: { value?: SkillVerification }) {
   if (!value) return null;
   const labels = { passed: "通过", warning: "有差异", failed: "未通过", unverified: "未验证" };
-  return <details className="skill-verification" open>
+  return <details className="skill-verification">
     <summary>自动检查结果</summary>
     {value.ruleSource && <p>{value.ruleSource.label} · 规则更新 {value.rulesDate}</p>}
     <ul>{value.checks.map((check, index) => <li key={index}>
@@ -41,6 +42,7 @@ function VerificationDetails({ value }: { value?: SkillVerification }) {
       <p>检查时间：{new Date(value.checkedAt).toLocaleString()}</p>
       {value.ruleSource && <p>规则来源：{value.ruleSource.url}</p>}
       {value.sourceHash && <p>源目录 SHA-256：<code style={{ overflowWrap: "anywhere" }}>{value.sourceHash}</code></p>}
+      {value.expectedHash && value.expectedHash !== value.sourceHash && <p>自动修复后预期 SHA-256：<code style={{ overflowWrap: "anywhere" }}>{value.expectedHash}</code></p>}
       {value.destinationHash && <p>目标目录 SHA-256：<code style={{ overflowWrap: "anywhere" }}>{value.destinationHash}</code></p>}
     </details>
   </details>;
@@ -73,6 +75,9 @@ export default function SkillCenter({
   const [scanning, setScanning] = useState(true);
   const [result, setResult] = useState<string>();
   const [resultRows, setResultRows] = useState<SkillCopyResult[]>([]);
+  const [copyTarget, setCopyTarget] = useState("");
+  const [copyToastVisible, setCopyToastVisible] = useState(false);
+  const [copyDetailsOpen, setCopyDetailsOpen] = useState(false);
   const [preview, setPreview] = useState<SkillCopyPreview>();
   const [previewError, setPreviewError] = useState<string>();
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -107,6 +112,14 @@ export default function SkillCenter({
   );
   const cleanupCount = items.filter((item) => item.cleanup?.level === "cleanup").length;
   const selectedDeletableCount = items.filter((item) => selected.includes(item.id) && item.cleanup?.deletable).length;
+  const copyStatusCounts = resultRows.reduce(
+    (counts, row) => ({ ...counts, [row.status]: counts[row.status] + 1 }),
+    { copied: 0, skipped: 0, failed: 0 },
+  );
+  const copyCheckCounts = resultRows.reduce((counts, row) => {
+    for (const check of row.verification?.checks ?? []) counts[check.state] += 1;
+    return counts;
+  }, { passed: 0, warning: 0, failed: 0, unverified: 0 });
   const blocked = scan
     ? scan.roots.filter((root) => root.status !== "scanned")
     : [];
@@ -200,6 +213,9 @@ export default function SkillCenter({
       setFailure(undefined);
       setResult(undefined);
       setResultRows([]);
+      setCopyTarget("");
+      setCopyToastVisible(false);
+      setCopyDetailsOpen(false);
       setDeleteResults([]);
       setRestoreMessage(undefined);
       setTarget((old) => next.targets.some(item => item.id === old && item.copySupported !== false)
@@ -283,6 +299,9 @@ export default function SkillCenter({
       setRestoreMessage(undefined);
       setResult(undefined);
       setResultRows([]);
+      setCopyTarget("");
+      setCopyToastVisible(false);
+      setCopyDetailsOpen(false);
       setDeleteOpen(false);
       setDeletePreview(undefined);
       setSelected([]);
@@ -326,14 +345,15 @@ export default function SkillCenter({
       const skipped = rows.filter((row) => row.status === "skipped").length;
       const failed = rows.filter((row) => row.status === "failed").length;
       setResult(
-        `已复制 ${copied}/${rows.length} 项${skipped ? `，${skipped} 项跳过` : ""}${failed ? `，${failed} 项失败` : ""}。已自动检查文件完整性及兼容性；具体结果见各项检查。`,
+        `已复制 ${copied}/${rows.length} 项${skipped ? `，${skipped} 项跳过` : ""}${failed ? `，${failed} 项失败` : ""}`,
       );
       setResultRows(rows);
+      setCopyTarget(target);
+      setCopyToastVisible(true);
+      setCopyDetailsOpen(false);
       invalidatePreview();
       setCopyOpen(false);
       setSelected([]);
-      setQuery("");
-      setSource("全部");
     } catch (error) {
       invalidatePreview();
       setPreviewError((error as Error).message);
@@ -343,6 +363,12 @@ export default function SkillCenter({
       setBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (!copyToastVisible) return;
+    const timer = window.setTimeout(() => setCopyToastVisible(false), 8000);
+    return () => window.clearTimeout(timer);
+  }, [copyToastVisible, resultRows]);
 
   return (
     <div className="skill-center">
@@ -386,6 +412,7 @@ export default function SkillCenter({
             </p>
           </div>
           <div className="skill-actions">
+            {resultRows.length > 0 && <button className="skill-copy-history" type="button" onClick={() => setCopyDetailsOpen(true)}><ClipboardCheck size={14} />最近复制（{resultRows.length}）</button>}
             <button
               className="text-button"
               onClick={selectAll}
@@ -447,36 +474,6 @@ export default function SkillCenter({
             {scanning ? "扫描中" : "重新扫描"}
           </button>
         </div>
-
-        {result && (
-          <div className="skill-results skill-notice" role="status">
-            <div className="notice">
-              <CheckCircle2 size={15} />
-              <div>{result}</div>
-            </div>
-            {resultRows.map((row, index) => (
-              <div className="skill-transfer-row" key={`${row.name}-${index}`}>
-                <div>
-                  <strong>{row.name}</strong>
-                  <span
-                    className={`badge ${row.status === "copied" ? "green" : "amber"}`}
-                  >
-                    {row.status === "copied"
-                      ? "已复制并检查"
-                      : row.status === "skipped"
-                        ? "已跳过"
-                        : "失败"}
-                  </span>
-                </div>
-                <p>{row.message}</p>
-                {row.destination && <p>已复制到 <span className="skill-path">{row.destination}</span></p>}
-                {row.backup && <p>旧版本备份：<span className="skill-path">{row.backup}</span></p>}
-                {row.activationHint && <p>使用方式：{row.activationHint}</p>}
-                <VerificationDetails value={row.verification} />
-              </div>
-            ))}
-          </div>
-        )}
 
         {deleteResults.length > 0 && <div className="skill-results skill-notice" role="status">
           <div className="notice green"><CheckCircle2 size={15} /><div>本次清理结果：{deleteResults.filter(row => row.status === "trashed").length} 项已移入回收区。可在下方恢复。</div></div>
@@ -622,6 +619,44 @@ export default function SkillCenter({
         <div className="skill-trash-content">{!scan.trash?.length ? <p>回收区为空。</p> : scan.trash.map(entry => <div className="skill-trash-row" key={entry.id}><div><strong>{entry.name}</strong><small>{new Date(entry.deletedAt).toLocaleString()} · {entry.source}</small><span className="skill-path">{entry.originalPath}</span></div><button className="secondary" type="button" disabled={busy} onClick={() => void restoreOne(entry.id)}><RotateCcw size={14} />恢复</button></div>)}</div>
       </details>}
 
+      {copyToastVisible && resultRows.length > 0 && <div className={`skill-copy-toast ${copyStatusCounts.failed || copyCheckCounts.failed ? "amber" : ""}`} role="status" aria-live="polite" aria-atomic="true">
+        {copyStatusCounts.failed || copyCheckCounts.failed ? <TriangleAlert size={17} /> : <CheckCircle2 size={17} />}
+        <div className="skill-copy-toast-content">
+          <strong>{result}</strong>
+          <span>{copyCheckCounts.passed + copyCheckCounts.warning + copyCheckCounts.failed + copyCheckCounts.unverified > 0
+            ? `检查：${copyCheckCounts.passed} 项通过 · ${copyCheckCounts.warning + copyCheckCounts.failed} 项有差异 · ${copyCheckCounts.unverified} 项未验证`
+            : "复制结果与文件位置已记录"}</span>
+          <button className="text-button" type="button" onClick={() => setCopyDetailsOpen(true)}>查看完整结果 <ChevronRight size={13} /></button>
+        </div>
+        <button className="icon-button skill-copy-toast-close" type="button" aria-label="收起复制结果提示" onClick={() => setCopyToastVisible(false)}><X size={16} /></button>
+      </div>}
+
+      {copyDetailsOpen && resultRows.length > 0 && <Modal
+        drawer
+        title="最近复制的结果"
+        subtitle={`${resultRows.length} 项 · ${scan?.targets.find(option => option.id === copyTarget)?.label ?? copyTarget}`}
+        onClose={() => setCopyDetailsOpen(false)}
+      >
+        <div className="modal-body skill-copy-report">
+          <div className={`notice ${copyStatusCounts.failed || copyCheckCounts.failed ? "amber" : "green"}`} role="status">
+            {copyStatusCounts.failed || copyCheckCounts.failed ? <TriangleAlert size={15} /> : <CheckCircle2 size={15} />}
+            <div><strong>{result}</strong><p>{copyCheckCounts.passed + copyCheckCounts.warning + copyCheckCounts.failed + copyCheckCounts.unverified > 0
+              ? `检查：${copyCheckCounts.passed} 项通过 · ${copyCheckCounts.warning + copyCheckCounts.failed} 项有差异 · ${copyCheckCounts.unverified} 项未验证`
+              : "未返回逐项检查；请查看复制状态及失败原因。"}</p></div>
+          </div>
+          {resultRows.map((row, index) => <div className="skill-transfer-row" key={`${row.name}-${index}`}>
+            <div><strong>{row.name}</strong><span className={`badge ${row.status === "copied" ? "green" : row.status === "failed" ? "amber" : "blue"}`}>{row.status === "copied" ? "已复制并检查" : row.status === "skipped" ? "已跳过" : "复制失败"}</span></div>
+            <p>{row.message}</p>
+            {row.activationHint && <p>使用方式：{row.activationHint}</p>}
+            {(row.destination || row.backup) && <details className="skill-copy-report-paths"><summary>复制路径与旧版本备份</summary>
+              {row.destination && <p>目标目录：<span className="skill-path">{row.destination}</span></p>}
+              {row.backup && <p>备份目录：<span className="skill-path">{row.backup}</span></p>}
+            </details>}
+            <VerificationDetails value={row.verification} />
+          </div>)}
+        </div>
+      </Modal>}
+
       {detail && (
         <Modal
           drawer
@@ -689,7 +724,7 @@ export default function SkillCenter({
       {copyOpen && (
         <Modal
           title="检查并复制 Skill"
-          subtitle={`已选择 ${selected.length} 个 Skill · 原样复制，自动校验`}
+          subtitle={`已选择 ${selected.length} 个 Skill · 自动检查与修复，源文件不变`}
           onClose={closeCopy}
         >
           <div className="modal-body skill-copy-body">
@@ -776,6 +811,7 @@ export default function SkillCenter({
                 <Check size={14} />
                 不安装依赖、不执行任何脚本
               </span>
+              <span><Check size={14} />明确的元信息缩进错误会在目标副本自动修复，并验证字段值保持一致</span>
               <details>
                 <summary>复制规则</summary>
                 <p>复制前会解析符号链接、检查链接失效、循环引用、内容凭据、资源路径、权限及目录大小。普通文件名包含 token 或 secret 不会单独拦截。无法复制时会列出具体路径和原因；超限或权限不足时不会留下不完整副本。</p>
@@ -803,7 +839,7 @@ export default function SkillCenter({
             {preview && (
               <div className="skill-transfer-preview" aria-label="兼容检查结果">
                 <p>
-                  点击“确认复制”后，保留说明、元信息、脚本和资源；内部链接展开复制，外部依赖会明确标出。工具自动比对目标规则和复制前后的内容哈希。OpenCode CLI 可用时还会检查目标文件是否被发现。
+                  点击“确认复制”后，保留说明、元信息、脚本和资源；下方列出的格式修复会自动应用到目标副本。工具核对源内容及预期副本哈希，源文件保持不变。OpenCode CLI 可用时还会检查目标文件是否被发现。
                 </p>
                 {preview.items.map((item) => (
                   <div className="skill-transfer-row" key={item.id}>
@@ -814,7 +850,7 @@ export default function SkillCenter({
                       >
                         {
                           {
-                            ready: "可原样复制",
+                            ready: item.verification?.checks.some(check => check.label === "自动修复计划") ? "自动修复后复制" : "可原样复制",
                             update: "备份后更新",
                             convert: "自动转换",
                             blocked: "检查未通过",
@@ -825,7 +861,7 @@ export default function SkillCenter({
                     </div>
                     {item.reason && <p>{item.reason}</p>}
                     {item.changes.length > 0 && (
-                      <ul aria-label="转换摘要">
+                      <ul aria-label="自动处理摘要">
                         {item.changes.map((change, index) => (
                           <li key={index}>{change}</li>
                         ))}

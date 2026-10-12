@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { convertSkill, convertOpenaiMetadata } from "../electron/core/skill-compatibility";
+import { parse } from "yaml";
 const skill = (meta: string, body = "Original body\n") => `---\n${meta}\n---\n${body}`;
 
 test("all host extensions and line endings are preserved byte for byte", () => {
@@ -41,4 +42,31 @@ test("unreadable foreign sidecar is preserved with warning, native errors block"
   assert.equal(convertOpenaiMetadata(text, "opencode").text, text);
   assert.match(convertOpenaiMetadata(text, "opencode").warnings.join(""), /无法解析/);
   assert.throws(() => convertOpenaiMetadata(text, "codex"));
+});
+
+test("unambiguous flattened interface fields are repaired without changing values or other settings", () => {
+  const text = '\uFEFF# author comment\r\ninterface: # display settings\r\ndisplay_name: "Helper" # keep comment\r\nshort_description: >-\r\n  First line\r\n  second line\r\ndefault_prompt: "Use the helper"\r\npolicy:\r\n  allow_implicit_invocation: false\r\ndependencies:\r\n  tools:\r\n    - type: mcp\r\n      value: docs\r\ncustom-field: original\r\n';
+  for (const target of ["wiscode", "codex", "opencode"]) {
+    const repaired = convertOpenaiMetadata(text, target, true);
+    assert.equal(repaired.changes.length, 1);
+    assert.match(repaired.text, /interface: # display settings\r\n  display_name:/);
+    assert.ok(repaired.text.startsWith('\uFEFF# author comment\r\n'));
+    assert.match(repaired.text, /# keep comment\r\n/);
+    const before = parse(text), after = parse(repaired.text);
+    assert.deepEqual(after.interface, { display_name: before.display_name, short_description: before.short_description, default_prompt: before.default_prompt });
+    assert.deepEqual(after.policy, before.policy);
+    assert.deepEqual(after.dependencies, before.dependencies);
+    assert.equal(after["custom-field"], before["custom-field"]);
+    assert.equal(convertOpenaiMetadata(repaired.text, target, true).text, repaired.text);
+    assert.deepEqual(convertOpenaiMetadata(repaired.text, target, true).changes, []);
+  }
+});
+
+test("ambiguous sidecar structures and duplicate fields are never guessed or stripped", () => {
+  for (const text of [
+    'interface:\nunknown: value\ndisplay_name: "Helper"\n',
+    'interface:\ndisplay_name: 123\n',
+    'interface:\ndisplay_name: "One"\ndisplay_name: "Two"\n',
+    'interface:\ndisplay_name: "First"\npolicy:\n  allow_implicit_invocation: false\ndefault_prompt: "Separated"\n',
+  ]) assert.throws(() => convertOpenaiMetadata(text, "wiscode", true));
 });

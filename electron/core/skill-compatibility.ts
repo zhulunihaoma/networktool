@@ -1,4 +1,5 @@
 import { parseDocument } from "yaml";
+import { isDeepStrictEqual } from "node:util";
 import { SKILL_TARGETS } from "../../src/shared/skill-targets";
 
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -65,14 +66,47 @@ export function convertSkill(text: string, folder: string, target: string, _nati
   return { text, changes: [] as string[], warnings };
 }
 
-export function convertOpenaiMetadata(text: string, target: string, _autoConvert = false) {
+const INTERFACE_FIELDS = new Set(["display_name", "short_description", "icon_small", "icon_large", "brand_color", "default_prompt"]);
+
+/** Repair only a blank interface followed by its known, misplaced string fields. */
+function repairInterfaceIndentation(text: string, meta: Record<string, unknown>) {
+  const fields = Object.keys(meta).filter(key => INTERFACE_FIELDS.has(key));
+  if (meta.interface !== null || !fields.length || fields.some(key => typeof meta[key] !== "string")) return;
+  const lines = text.split(/(?<=\n)/);
+  const start = lines.findIndex(line => /^interface:[ \t]*(?:#[^\r\n]*)?\r?\n?$/.test(line.replace(/^\uFEFF/, "")));
+  if (start < 0) return;
+  const found: string[] = [];
+  let end = start + 1;
+  for (; end < lines.length; end++) {
+    const line = lines[end];
+    if (/^\s*(?:#.*)?$/.test(line) || /^[ \t]/.test(line)) continue;
+    const key = /^([a-z_][a-z0-9_-]*):(?:[ \t\r\n]|$)/i.exec(line)?.[1];
+    if (!key || !INTERFACE_FIELDS.has(key)) break;
+    found.push(key);
+  }
+  if (!found.length || fields.some(key => !found.includes(key))) return;
+  const repaired = lines.map((line, index) => index > start && index < end && line.trim() ? `  ${line}` : line).join("");
+  const expected: Record<string, unknown> = { ...meta, interface: Object.fromEntries(found.map(key => [key, meta[key]])) };
+  for (const key of found) delete expected[key];
+  // Reparse and compare every value, including policy, dependencies and unknown fields.
+  const parsed = mapping(repaired);
+  if (!isDeepStrictEqual(parsed, expected)) return;
+  return { text: repaired, meta: parsed, change: `agents/openai.yaml：自动修复 interface 下 ${found.join("、")} 的缩进层级；字段值、策略、依赖及其他配置保持不变` };
+}
+
+export function convertOpenaiMetadata(text: string, target: string, autoConvert = false) {
   const warnings: string[] = [];
+  const changes: string[] = [];
   const native = target === "codex" || target === "wiscode";
   let meta: Record<string, unknown>;
   try { meta = mapping(text); }
   catch (error) {
     if (native) throw error;
     return { text, changes: [] as string[], instructions: "", warnings: ["agents/openai.yaml 原样保留，但 YAML 无法解析；目标对该文件的支持未验证"] };
+  }
+  if (autoConvert) {
+    const repaired = repairInterfaceIndentation(text, meta);
+    if (repaired) { text = repaired.text; meta = repaired.meta; changes.push(repaired.change); }
   }
   if (native) {
     for (const key of ["interface", "policy", "dependencies"]) {
@@ -82,7 +116,7 @@ export function convertOpenaiMetadata(text: string, target: string, _autoConvert
   }
   if (!native) warnings.push("agents/openai.yaml 完整保留；这是 OpenAI 专属配置，目标不保证执行其中的调用策略和依赖声明");
   if (meta.dependencies !== undefined) warnings.push("Skill 声明了工具依赖；文件复制不会自动配置 MCP、登录或授权，依赖可用性尚未验证");
-  return { text, changes: [] as string[], instructions: "", warnings };
+  return { text, changes, instructions: "", warnings };
 }
 export function checkOpenaiMetadata(text: string, target: string) {
   return convertOpenaiMetadata(text, target);
