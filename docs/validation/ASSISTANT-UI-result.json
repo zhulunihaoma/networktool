@@ -1,0 +1,38 @@
+{
+  "verifiedAt": "2026-10-04T00:37:13.525Z",
+  "mode": "native-electron-fixture",
+  "platform": "darwin",
+  "discovered": [
+    {
+      "productId": "vscode",
+      "status": "running_confirmed",
+      "version": "1.138.0"
+    },
+    {
+      "productId": "codex",
+      "status": "candidate"
+    },
+    {
+      "productId": "claude-code",
+      "status": "candidate"
+    },
+    {
+      "productId": "codex",
+      "status": "candidate"
+    }
+  ],
+  "scopeCount": 1,
+  "candidates": 2,
+  "separatePolicies": true,
+  "fileContentsNotDisplayed": true,
+  "canBlockToolAccess": false,
+  "contextFrozen": true,
+  "exportPreviewMatchesSavedFile": true,
+  "staleAuditPreviewRejected": true,
+  "rejected": [
+    "arbitrary-path",
+    "unknown-operation",
+    "stale-revision"
+  ],
+  "errors": []
+}

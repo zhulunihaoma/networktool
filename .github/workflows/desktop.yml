@@ -1,0 +1,27 @@
+name: Desktop build
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm test
+        env:
+          OPENSSL_BIN: openssl
+      - run: npm run build
+      - if: runner.os == 'macOS'
+        run: npm run package
+      - if: runner.os == 'Windows'
+        run: npm run package:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: network-lens-${{ runner.os }}
+          path: release/

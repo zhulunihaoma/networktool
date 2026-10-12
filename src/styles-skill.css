@@ -1,0 +1,565 @@
+/* ===== Skill 中心（在 styles.css 之后引入，覆盖全局 button/notice 规则） ===== */
+.skill-center {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+.skill-center .page-heading {
+  margin-bottom: 18px;
+}
+
+/* 步骤条 */
+.skill-steps {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+  color: #8d9aab;
+  font-size: 12px;
+}
+.skill-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  padding: 0 5px;
+}
+.skill-step > span {
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border: 1px solid #d7dee7;
+  border-radius: 50%;
+  background: #fff;
+  color: #94a2b3;
+  font-size: 11px;
+  font-weight: 650;
+}
+.skill-step.active {
+  color: #2b7b7f;
+  font-weight: 650;
+}
+.skill-step.active > span {
+  background: #2b7b7f;
+  border-color: #2b7b7f;
+  color: #fff;
+}
+.skill-step.done {
+  color: #6f8b8c;
+}
+.skill-step.done > span {
+  background: #f2fbfa;
+  border-color: #a2cccb;
+  color: #2b7b7f;
+}
+.skill-step > svg {
+  color: #ccd6e1;
+}
+
+/* 首屏扫描引导 */
+.skill-start {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+  border-color: #c3dedb;
+  background: linear-gradient(135deg, #f4fbfa, #fff);
+}
+.skill-start-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  background: #dcf1ef;
+  color: #2b7b7f;
+}
+.skill-start > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.skill-start h2 {
+  font-size: 15px;
+  margin-bottom: 3px;
+}
+.skill-start p {
+  color: #6b7a8d;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* 列表面板：标题 / 工具条 / 表格统一 20px 内缩进 */
+.skill-list {
+  overflow: hidden;
+}
+.skill-list .section-heading {
+  padding: 15px 20px 13px;
+}
+.skill-list .section-heading p {
+  margin-top: 4px;
+}
+.skill-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.skill-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: #fcfdfe;
+}
+.skill-toolbar .search-field {
+  flex: 1 1 200px;
+  min-width: 170px;
+}
+.skill-toolbar .search-field input {
+  padding: 9px 12px 9px 34px;
+  font-size: 12px;
+}
+/* 来源数量随已安装工具变化，超宽时在本行内横向滚动，不撑破页面 */
+.skill-toolbar .segmented {
+  flex: 0 1 auto;
+  min-width: 150px;
+  padding: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.skill-toolbar .segmented::-webkit-scrollbar {
+  display: none;
+}
+.skill-toolbar .segmented button {
+  flex: 0 0 auto;
+  padding: 6px 11px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.skill-toolbar .secondary {
+  flex-shrink: 0;
+  padding: 7px 13px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.skill-notice {
+  margin: 14px 20px;
+}
+.skill-notice > div {
+  min-width: 0;
+}
+.skill-state {
+  border-top: 1px solid var(--line);
+}
+.skill-state .empty {
+  padding: 30px 20px;
+}
+
+/* 表格：表头与内容统一左对齐，列宽收紧 */
+.skill-table {
+  overflow: auto;
+  max-height: clamp(320px, calc(100vh - 340px), 560px);
+}
+.skill-table-head,
+.skill-row {
+  display: grid;
+  align-items: start;
+  grid-template-columns: 26px minmax(180px, 1.5fr) minmax(110px, .8fr) 96px minmax(120px, .85fr) 104px;
+  gap: 14px;
+  padding: 9px 20px;
+  margin: 0;
+  min-width: 850px;
+  text-align: left;
+}
+.skill-table-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f7f9fb;
+  color: #7b8899;
+  font-size: 11px;
+  font-weight: 600;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+.skill-table-head > * {
+  text-align: left;
+}
+.skill-row {
+  border-top: 1px solid #eef2f6;
+}
+.skill-table-head + .skill-row {
+  border-top: 0;
+}
+.skill-row.selected {
+  background: #f4fbfa;
+}
+.skill-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  min-height: 0;
+  margin: 3px 0 0;
+  padding: 0;
+  accent-color: #2b7b7f;
+  cursor: pointer;
+}
+.skill-name {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  min-width: 0;
+}
+.skill-name strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2c3d52;
+}
+.skill-name:hover strong {
+  color: #2b7b7f;
+}
+.skill-name > span {
+  color: #78868f;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.skill-meta strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #40506a;
+}
+.skill-meta small {
+  display: block;
+  margin-top: 2px;
+  color: #8b98a8;
+  font-size: 11px;
+}
+.skill-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+.skill-row .skill-tags {
+  overflow: hidden;
+  max-height: 46px;
+  align-content: flex-start;
+}
+.skill-tags .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.skill-row .skill-tags .badge:not(.more) {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.badge.more {
+  background: #eef1f5;
+  color: #98a4b3;
+}
+.skill-status .badge {
+  padding: 3px 6px;
+  font-size: 10px;
+}
+.skill-status { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.skill-advice-tag { display: inline-flex; align-items: center; max-width: 100%; padding: 4px 7px; border-radius: 6px; font-size: 10px; font-weight: 700; line-height: 1.3; }
+.skill-advice-tag.cleanup { color: #94611e; background: #fff2d8; }
+.skill-advice-tag.consider { color: #36679a; background: #eaf3fe; }
+.skill-advice-tag.repair { color: #a34d35; background: #fff0e9; }
+.skill-advice-tag.keep { color: #29816d; background: #e9f8f1; }
+.skill-advice-tag.unknown { color: #65748a; background: #eef2f6; }
+.skill-usage-label { color: #8b98a8; font-size: 10px; line-height: 1.4; }
+.skill-row-actions { display: flex; align-items: center; gap: 5px; }
+.skill-row-delete { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #e2d7d2; border-radius: 6px; background: #fff; color: #b36453; }
+.skill-row-delete:hover:not(:disabled) { background: #fff3ed; border-color: #d8a697; }
+.skill-row-delete:disabled { opacity: .45; cursor: not-allowed; }
+.skill-batch-delete,.skill-delete-confirm { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 12px; border: 1px solid #ddb9aa; border-radius: 8px; background: #fffaf7; color: #a54f3b; font-size: 12px; font-weight: 650; white-space: nowrap; }
+.skill-batch-delete:hover:not(:disabled),.skill-delete-confirm:hover:not(:disabled) { border-color: #ca8f79; background: #fff0e9; }
+.skill-batch-delete:disabled,.skill-delete-confirm:disabled { opacity: .5; cursor: not-allowed; }
+.skill-cleanup-filter { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 7px 10px; border: 1px solid #e5d4c0; border-radius: 7px; background: #fff; color: #8a6845; font-size: 12px; white-space: nowrap; }
+.skill-cleanup-filter.active { background: #fff2dd; border-color: #e3b976; color: #8e5c1b; }
+.skill-cleanup-filter span { display: grid; place-items: center; min-width: 18px; height: 18px; border-radius: 9px; background: #f6e7d1; font-size: 10px; }
+.skill-row-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 5px 8px;
+  border: 1px solid #c8d9df;
+  border-radius: 6px;
+  background: #fff;
+  color: #2b7b7f;
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
+}
+.skill-row-copy:hover:not(:disabled) {
+  border-color: #8ebcbd;
+  background: #f2fbfa;
+}
+.skill-row-copy:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.skill-footnote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 2px 0;
+  color: #8794a5;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+/* 详情抽屉（复用 Modal drawer 外壳） */
+.tool-drawer .modal-body {
+  flex: 1;
+  min-height: 0;
+}
+.skill-detail h3 {
+  margin: 18px 0 8px;
+  font-size: 13px;
+}
+.skill-detail h3:first-child {
+  margin-top: 0;
+}
+.skill-detail .skill-lead {
+  color: #596579;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.skill-detail .detail-grid {
+  margin: 14px 0 0;
+}
+.skill-detail .primary {
+  width: 100%;
+  margin-top: 20px;
+  padding: 11px 0;
+  justify-content: center;
+  font-size: 13px;
+}
+.skill-detail-actions { display: flex; flex-direction: column; gap: 9px; margin-top: 20px; }
+.skill-detail-actions .primary { margin-top: 0; }
+.skill-detail-actions .skill-batch-delete { width: 100%; padding: 10px; }
+.skill-cleanup-detail { margin-top: 18px; padding: 12px 14px; border: 1px solid #e3e9ef; border-radius: 9px; background: #f8fafc; }
+.skill-cleanup-detail h3 { margin-top: 0; }
+.skill-cleanup-detail p { color: #64748b; font-size: 12px; line-height: 1.6; margin: 8px 0 0; overflow-wrap: anywhere; }
+.skill-cleanup-detail .impact,.skill-delete-card .impact { color: #9b6642; }
+.skill-path {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: #f2f5f9;
+  color: #5c6c82;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+
+/* 复制确认弹窗 */
+.skill-copy-check {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f7f9fb;
+  color: #5c6a7d;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.skill-copy-check strong {
+  color: #33455c;
+  font-size: 12px;
+}
+.skill-copy-check span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.skill-copy-check svg {
+  flex-shrink: 0;
+  color: #2b9b7f;
+}
+.skill-copy-check .warn {
+  color: #a5813f;
+}
+.skill-copy-body select {
+  display: block;
+  width: 100%;
+  max-width: none;
+  margin-top: 8px;
+}
+.skill-copy-body > label {
+  margin-bottom: 16px;
+}
+
+@media (max-width: 900px) {
+  .skill-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .skill-list .section-heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .skill-actions {
+    margin-left: 0;
+  }
+}
+@media (max-width: 650px) {
+  .skill-start {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .skill-actions {
+    flex-direction: column;
+    align-items: flex-end;
+  }
+}
+
+/* 结果提示与复制清单 */
+.notice.green {
+  background: #f1fbf6;
+  border-color: #d8efe3;
+  color: #47876b;
+}
+.skill-copy-list {
+  margin-bottom: 16px;
+}
+.skill-transfer-path {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.skill-transfer-path small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.skill-copy-body > .skill-target-presence {
+  align-items: flex-start;
+  margin: -6px 0 14px;
+}
+.skill-target-presence > div {
+  min-width: 0;
+}
+.skill-target-presence strong {
+  display: block;
+}
+.skill-target-presence p {
+  margin: 3px 0 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.skill-transfer-preview {
+  margin-top: 16px;
+}
+.skill-transfer-preview > p {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.skill-transfer-row {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  margin-top: 8px;
+  background: #fff;
+  min-width: 0;
+}
+.skill-transfer-row > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.skill-transfer-row strong {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.skill-transfer-row p,
+.skill-transfer-row ul {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 7px 0 0;
+  overflow-wrap: anywhere;
+}
+.skill-transfer-row ul {
+  padding-left: 18px;
+}
+.skill-transfer-row .skill-transfer-warnings {
+  color: #896625;
+}
+.skill-transfer-row .badge {
+  flex-shrink: 0;
+}
+.skill-copy-body > .notice {
+  margin-top: 12px;
+}
+.skill-results > .notice {
+  margin: 0;
+}
+.skill-restore-button { margin-top: 9px; font-size: 12px; }
+.skill-trash-panel { margin: 12px 0 0; border: 1px solid #dce5ed; border-radius: 10px; background: #fff; }
+.skill-trash-panel > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 17px; cursor: pointer; list-style: none; }
+.skill-trash-panel > summary::-webkit-details-marker { display: none; }
+.skill-trash-panel > summary span { display: inline-flex; align-items: center; gap: 8px; color: #36485e; font-size: 13px; font-weight: 650; }
+.skill-trash-panel > summary strong { padding: 2px 7px; border-radius: 9px; background: #eef2f6; font-size: 11px; }
+.skill-trash-panel > summary small { color: #8694a7; font-size: 11px; }
+.skill-trash-content { border-top: 1px solid #e9eef3; padding: 7px 17px 13px; }
+.skill-trash-content > p { color: #8391a3; font-size: 12px; }
+.skill-trash-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid #edf1f5; padding: 10px 0; }
+.skill-trash-row:last-child { border-bottom: 0; }
+.skill-trash-row > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.skill-trash-row strong { color: #34485f; font-size: 12px; }
+.skill-trash-row small { color: #8491a2; font-size: 11px; }
+.skill-trash-row .secondary { flex-shrink: 0; font-size: 12px; }
+.skill-delete-body > .notice { margin: 0 0 12px; }
+.skill-delete-wait { display: flex; align-items: center; gap: 8px; color: #718198; font-size: 12px; }
+.skill-delete-card { margin: 9px 0; padding: 12px 14px; border: 1px solid #e3e9ef; border-radius: 9px; background: #fff; }
+.skill-delete-card > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.skill-delete-card strong { color: #32445b; font-size: 13px; }
+.skill-delete-card p { margin: 8px 0 0; color: #67768b; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.skill-delete-card .skill-delete-reason { color: #a04d3d; font-weight: 650; }
+.skill-delete-confirm { background: #a95642; border-color: #a95642; color: #fff; }
+.skill-delete-confirm:hover:not(:disabled) { background: #924432; border-color: #924432; }
+
+/* 面板内所有直接子项等宽铺开，避免被 flex 收缩居中 */
+.skill-list > * {
+  align-self: stretch;
+  min-width: 0;
+}
+.skill-table {
+  width: 100%;
+}

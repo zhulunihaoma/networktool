@@ -1,0 +1,288 @@
+{
+  "verifiedAt": "2026-10-04T06:33:18.548Z",
+  "platform": "darwin",
+  "installedCount": 13,
+  "notRunningCount": 7,
+  "tools": [
+    {
+      "productId": "cc-switch",
+      "role": "host",
+      "status": "running_confirmed",
+      "version": "3.16.1",
+      "update": {
+        "status": "available",
+        "installedVersion": "3.16.1",
+        "source": "项目 GitHub Releases",
+        "sourceUrl": "https://github.com/farion1231/cc-switch/releases",
+        "channel": "latest 稳定发布",
+        "message": "发布源有较新版本；更新前请在原工具核对渠道与兼容性。",
+        "checkedAt": 1791095594076,
+        "latestVersion": "3.20.4"
+      },
+      "components": []
+    },
+    {
+      "productId": "codex",
+      "role": "host",
+      "status": "running_confirmed",
+      "version": "26.930.31730",
+      "update": {
+        "status": "manual",
+        "installedVersion": "26.930.31730",
+        "sourceUrl": "https://chatgpt.com/codex",
+        "message": "尚无经核验的机器可读发布源，请在工具的“检查更新”或官方发布页确认。"
+      },
+      "components": []
+    },
+    {
+      "productId": "deepseek-harness",
+      "role": "host",
+      "status": "running_confirmed",
+      "version": "0.2.0-rc.2",
+      "update": {
+        "status": "current",
+        "installedVersion": "0.2.0-rc.2",
+        "source": "应用随附的 DeepSeek 更新源",
+        "sourceUrl": "https://download.deepseek.com/dsh-desk/feeds/mac-arm64/",
+        "channel": "macOS arm64 nightly",
+        "message": "本机版本与本次发布源版本一致；不代表所有灰度渠道均无更新。",
+        "checkedAt": 1791095594107,
+        "latestVersion": "0.2.0-rc.2"
+      },
+      "components": []
+    },
+    {
+      "productId": "opencode",
+      "role": "host",
+      "status": "running_confirmed",
+      "version": "1.18.34",
+      "update": {
+        "status": "current",
+        "installedVersion": "1.18.34",
+        "source": "项目 GitHub Releases",
+        "sourceUrl": "https://github.com/anomalyco/opencode/releases",
+        "channel": "latest 稳定发布",
+        "message": "本机版本与本次发布源版本一致；不代表所有灰度渠道均无更新。",
+        "checkedAt": 1791095594108,
+        "latestVersion": "1.18.34"
+      },
+      "components": []
+    },
+    {
+      "productId": "vscode",
+      "role": "host",
+      "status": "running_confirmed",
+      "version": "1.138.0",
+      "update": {
+        "status": "available",
+        "installedVersion": "1.138.0",
+        "source": "VS Code 官方更新服务",
+        "sourceUrl": "https://code.visualstudio.com/updates",
+        "channel": "stable",
+        "message": "发布源有较新版本；更新前请在原工具核对渠道与兼容性。",
+        "checkedAt": 1791095595296,
+        "latestVersion": "1.140.0"
+      },
+      "components": [
+        {
+          "name": "Claude Code 扩展",
+          "version": "2.1.283",
+          "update": {
+            "status": "error",
+            "installedVersion": "2.1.283",
+            "source": "Visual Studio Marketplace",
+            "sourceUrl": "https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code",
+            "channel": "公开稳定发布（未验证编辑器兼容性）",
+            "message": "扩展更新查询未完成（HTTP 403），请在编辑器扩展页检查；不能判定已是最新。",
+            "checkedAt": 1791095596021
+          }
+        },
+        {
+          "name": "Claude Code 扩展",
+          "version": "2.1.285",
+          "update": {
+            "status": "error",
+            "installedVersion": "2.1.285",
+            "source": "Visual Studio Marketplace",
+            "sourceUrl": "https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code",
+            "channel": "公开稳定发布（未验证编辑器兼容性）",
+            "message": "扩展更新查询未完成（HTTP 403），请在编辑器扩展页检查；不能判定已是最新。",
+            "checkedAt": 1791095597032
+          }
+        },
+        {
+          "name": "Claude Code 扩展",
+          "version": "2.1.286",
+          "update": {
+            "status": "error",
+            "installedVersion": "2.1.286",
+            "source": "Visual Studio Marketplace",
+            "sourceUrl": "https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code",
+            "channel": "公开稳定发布（未验证编辑器兼容性）",
+            "message": "扩展更新查询未完成（HTTP 403），请在编辑器扩展页检查；不能判定已是最新。",
+            "checkedAt": 1791095597032
+          }
+        },
+        {
+          "name": "Claude Code 扩展",
+          "version": "2.1.288",
+          "update": {
+            "status": "error",
+            "installedVersion": "2.1.288",
+            "source": "Visual Studio Marketplace",
+            "sourceUrl": "https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code",
+            "channel": "公开稳定发布（未验证编辑器兼容性）",
+            "message": "扩展更新查询未完成（HTTP 403），请在编辑器扩展页检查；不能判定已是最新。",
+            "checkedAt": 1791095597032
+          }
+        },
+        {
+          "name": "极库 Copilot Code",
+          "version": "2.1.7",
+          "update": {
+            "status": "manual",
+            "installedVersion": "2.1.7",
+            "message": "企业扩展需在编辑器或企业分发渠道核对更新。"
+          }
+        }
+      ]
+    },
+    {
+      "productId": "wiscode",
+      "role": "host",
+      "status": "running_confirmed",
+      "version": "26.924.1621",
+      "update": {
+        "status": "current",
+        "installedVersion": "26.924.1621",
+        "source": "应用随附的 WisCode 更新源",
+        "sourceUrl": "https://wiscode.qihoo.net",
+        "channel": "macOS arm64 latest",
+        "message": "本机版本与本次发布源版本一致；不代表所有灰度渠道均无更新。",
+        "checkedAt": 1791095595835,
+        "latestVersion": "26.924.1621"
+      },
+      "components": []
+    },
+    {
+      "productId": "namiai",
+      "role": "host",
+      "status": "installed_confirmed",
+      "version": "1.3.1318.64",
+      "update": {
+        "status": "manual",
+        "installedVersion": "1.3.1318.64",
+        "message": "尚无经核验的机器可读发布源，请在工具的“检查更新”或官方发布页确认。"
+      },
+      "components": []
+    },
+    {
+      "productId": "claude-desktop",
+      "role": "host",
+      "status": "installed_confirmed",
+      "version": "2.2553.1",
+      "update": {
+        "status": "manual",
+        "installedVersion": "2.2553.1",
+        "sourceUrl": "https://claude.com/download",
+        "message": "尚无经核验的机器可读发布源，请在工具的“检查更新”或官方发布页确认。"
+      },
+      "components": []
+    },
+    {
+      "productId": "claude-code",
+      "role": "cli",
+      "status": "installed_confirmed",
+      "version": "2.1.278",
+      "update": {
+        "status": "available",
+        "installedVersion": "2.1.278",
+        "source": "npm 官方注册表 · @anthropic-ai/claude-code",
+        "sourceUrl": "https://code.claude.com/docs/en/setup",
+        "channel": "npm latest（未核验工具内自动更新渠道）",
+        "message": "发布源有较新版本；更新前请在原工具核对渠道与兼容性。",
+        "checkedAt": 1791095595987,
+        "latestVersion": "2.1.289"
+      },
+      "components": []
+    },
+    {
+      "productId": "claude-code",
+      "role": "cli",
+      "status": "installed_confirmed",
+      "version": "2.1.29",
+      "update": {
+        "status": "available",
+        "installedVersion": "2.1.29",
+        "source": "npm 官方注册表 · @anthropic-ai/claude-code",
+        "sourceUrl": "https://code.claude.com/docs/en/setup",
+        "channel": "npm latest（未核验工具内自动更新渠道）",
+        "message": "发布源有较新版本；更新前请在原工具核对渠道与兼容性。",
+        "checkedAt": 1791095596171,
+        "latestVersion": "2.1.289"
+      },
+      "components": []
+    },
+    {
+      "productId": "dsh-desktop",
+      "role": "host",
+      "status": "installed_confirmed",
+      "version": "2.0.5",
+      "update": {
+        "status": "error",
+        "installedVersion": "2.0.5",
+        "source": "应用提供的 GitHub 发布源",
+        "sourceUrl": "https://github.com/anywhere-labs/deepseek-harness-desktop/releases",
+        "channel": "latest 稳定发布",
+        "message": "更新查询未完成（网络、证书或超时错误），不能判定已是最新。可在工具内检查后重试。",
+        "checkedAt": 1791095596824
+      },
+      "components": []
+    },
+    {
+      "productId": "opencode",
+      "role": "cli",
+      "status": "installed_confirmed",
+      "version": "1.18.15",
+      "update": {
+        "status": "available",
+        "installedVersion": "1.18.15",
+        "source": "npm 官方注册表 · opencode-ai",
+        "sourceUrl": "https://github.com/anomalyco/opencode/releases",
+        "channel": "npm latest（未核验工具内自动更新渠道）",
+        "message": "发布源有较新版本；更新前请在原工具核对渠道与兼容性。",
+        "checkedAt": 1791095596824,
+        "latestVersion": "1.18.34"
+      },
+      "components": []
+    },
+    {
+      "productId": "workbuddy",
+      "role": "host",
+      "status": "installed_confirmed",
+      "version": "5.3.13",
+      "update": {
+        "status": "available",
+        "installedVersion": "5.3.13",
+        "source": "WorkBuddy 官方更新日志",
+        "sourceUrl": "https://www.codebuddy.cn/docs/workbuddy/Changelog",
+        "channel": "公开日志的已发布版本（不代表灰度渠道）",
+        "message": "发布源有较新版本；更新前请在原工具核对渠道与兼容性。",
+        "checkedAt": 1791095597032,
+        "latestVersion": "5.6.2"
+      },
+      "components": []
+    },
+    {
+      "productId": "codex",
+      "role": "cli",
+      "status": "candidate",
+      "update": {
+        "status": "unknown",
+        "message": "先核验安装身份；候选或历史记录不查询更新。"
+      },
+      "components": []
+    }
+  ],
+  "errors": []
+}

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-electron/
+release/
+.runtime/
+test-results/
+*.log
+.DS_Store
+.wiscode/
+.codegraph/

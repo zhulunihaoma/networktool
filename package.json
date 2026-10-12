@@ -1,0 +1,67 @@
+{
+  "name": "network-lens",
+  "version": "0.3.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "description": "Evidence-first desktop network diagnostics",
+  "author": "Network Lens contributors",
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc --noEmit && vite build && node scripts/build.mjs",
+    "start": "electron .",
+    "preview": "vite --host 127.0.0.1",
+    "test": "tsx --test tests/*.test.ts",
+    "package": "npm run build && electron-builder --mac dir",
+    "package:win": "npm run build && electron-builder --win nsis --x64"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "sql.js": "^1.13.0",
+    "yaml": "^2.9.1",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/sql.js": "^1.4.9",
+    "@vitejs/plugin-react": "^4.7.0",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.25.0",
+    "prettier": "^3.9.9",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vite": "^6.3.0"
+  },
+  "build": {
+    "appId": "dev.networklens.desktop",
+    "productName": "Network Lens",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "node_modules/sql.js/dist/sql-wasm.wasm"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": "dir"
+    },
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

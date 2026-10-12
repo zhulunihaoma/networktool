@@ -1,0 +1,44 @@
+{
+  "status": "completed",
+  "steps": [
+    {
+      "id": "network",
+      "status": "pass",
+      "summary": "系统报告有可用网络地址"
+    },
+    {
+      "id": "proxy",
+      "status": "pass",
+      "summary": "系统选中的代理端点接受了 TCP 连接"
+    },
+    {
+      "id": "dns",
+      "status": "pass",
+      "summary": "系统解析器返回了入口地址"
+    },
+    {
+      "id": "entry",
+      "status": "pass",
+      "summary": "平台入口可访问"
+    },
+    {
+      "id": "stability",
+      "status": "unverified",
+      "summary": "本次未观察到配置变化；持续会话仍未验证"
+    }
+  ],
+  "priorityIds": [],
+  "observation": {
+    "status": "completed",
+    "samples": 60,
+    "processCount": 5,
+    "markers": 1,
+    "errors": 0
+  },
+  "rejected": [
+    "stale-id",
+    "unknown-action"
+  ],
+  "markerPurpose": "UI button verification; not a real Codex disconnection",
+  "verification": "unknown"
+}

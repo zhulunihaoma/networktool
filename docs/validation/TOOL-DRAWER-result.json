@@ -1,0 +1,19 @@
+{
+  "verifiedAt": "2026-10-05T00:12:14.722Z",
+  "mode": "native-electron-isolated-data",
+  "hoverFeedback": true,
+  "pointerAndKeyboardSelection": true,
+  "independentPinAction": true,
+  "rightDrawer": true,
+  "escapeBackdropAndCloseButton": true,
+  "focusTrapAndRestore": true,
+  "selectedStateRetained": true,
+  "narrowViewportScroll": {
+    "height": 620,
+    "content": 880,
+    "width": 679,
+    "scrollWidth": 679
+  },
+  "diagnosisAndFileNavigation": true,
+  "errors": []
+}

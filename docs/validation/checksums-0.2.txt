@@ -1,0 +1,2 @@
+1cea644857ab8ba2b56e80c60a12f534dd60a3125944a1885dfe0d831c1c0474  release/Network-Lens-macOS-arm64.zip
+281bcb492869b6a36effc2b1b781f98183bbe84e1dd8e459f787200cf17512fe  release/Network Lens Setup 0.2.0.exe
