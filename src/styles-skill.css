@@ -160,6 +160,16 @@
   font-size: 12px;
   white-space: nowrap;
 }
+.skill-toolbar .segmented button[draggable="true"] {
+  cursor: grab;
+}
+.skill-toolbar .segmented button.dragging {
+  cursor: grabbing;
+  opacity: 0.45;
+}
+.skill-toolbar .segmented button.drag-over {
+  box-shadow: inset 2px 0 0 #487dc7;
+}
 .skill-toolbar .secondary {
   flex-shrink: 0;
   padding: 7px 13px;

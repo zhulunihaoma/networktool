@@ -2,6 +2,7 @@ import type { AssistantAPI as importAssistantAPI } from "./assistant";
 import type { HandoffAPI } from "./handoff-api";
 import type { SkillCopyResult, SkillScan, SkillCopyPreview, SkillDeletePreview, SkillDeleteResult, SkillTrashEntry } from "./skills";
 import type { ToolDiagnosisReference, ToolDiagnosisContext } from "./assistant";
+import type { ToolUsage } from "./tool-usage";
 export type Stage =
   | "config"
   | "dns"
@@ -173,6 +174,7 @@ export interface DesktopAPI extends importAssistantAPI, HandoffAPI {
   onProviders(callback: (scan: ProviderScan) => void): () => void;
   overview(): Promise<Overview>;
   processes(): Promise<ProcessInfo[]>;
+  toolUsage(): Promise<ToolUsage>;
   connections(key?: string): Promise<{ flows: Flow[]; error?: string }>;
   start(input: StartInput): Promise<Session>;
   get(id: string): Promise<Session>;

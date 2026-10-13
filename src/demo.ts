@@ -521,6 +521,7 @@ export function createDemoAPI(): DesktopAPI {
       )?.id,
     }),
     processes: async () => processes,
+    toolUsage: async () => ({ version: 1, tools: {} }),
     connections: async (key) => ({
       flows: demoSession().flows.filter((f) => !key || f.processKey === key),
     }),

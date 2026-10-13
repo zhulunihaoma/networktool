@@ -34,6 +34,7 @@ import { UPDATE_PAGE_URLS } from "./core/tool-updates";
 import { ToolRegistry } from "./core/tool-registry";
 import { FilePolicies } from "./core/file-policies";
 import { SkillScanner } from "./core/skills";
+import { ToolUsageTracker } from "./core/tool-usage";
 import { HandoffManager } from "./core/handoff";
 import { ADAPTER_SOURCE_URLS } from "../src/shared/adapters";
 import {
@@ -53,6 +54,7 @@ let providerDoctor: ProviderDoctor;
 let triage: TriageDoctor;
 let files: FilePolicies;
 let skills: SkillScanner;
+let toolUsage: ToolUsageTracker | undefined;
 let resettingProbe = false;
 const entry = path.join(__dirname, "../dist/index.html");
 const sessionId = z.string().uuid();
@@ -165,6 +167,11 @@ app
     manager.init();
     files = new FilePolicies(store);
     skills = new SkillScanner(app.getPath("home"));
+    if (!toolUsage) {
+      toolUsage = new ToolUsageTracker(store, listProcesses);
+      toolUsage.start();
+      app.on("will-quit", () => toolUsage?.stop());
+    }
     doctor = new PlatformDoctor(
       { processes: listProcesses, probe: probePlatform },
       (scan) => {
@@ -481,6 +488,7 @@ app
       clipboard.writeText(platformHelpText(scan, result));
     });
     handle("processes", () => listProcesses());
+    handle("tool-usage", () => toolUsage?.current() ?? { version: 1, tools: {} });
     handle("connections", async (key?: string) => {
       if (key !== undefined) z.string().max(300).parse(key);
       const ps = await listProcesses();

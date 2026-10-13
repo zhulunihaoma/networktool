@@ -72,6 +72,7 @@ const api: DesktopAPI = {
   },
   overview: () => ipcRenderer.invoke("overview"),
   processes: () => ipcRenderer.invoke("processes"),
+  toolUsage: () => ipcRenderer.invoke("tool-usage"),
   connections: (key) => ipcRenderer.invoke("connections", key),
   start: (input) => ipcRenderer.invoke("start", input),
   get: (id) => ipcRenderer.invoke("get", id),

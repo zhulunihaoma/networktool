@@ -28,6 +28,25 @@ import type {
   SkillScan,
   SkillVerification,
 } from "./shared/skills";
+import {
+  ALL_SOURCE,
+  loadSourceState,
+  moveSource,
+  orderSources,
+  saveSourceState,
+  sourceProductId,
+  type SourceState,
+  type StorageLike,
+} from "./shared/source-order";
+import type { ToolUsage } from "./shared/tool-usage";
+
+function browserStorage(): StorageLike | undefined {
+  try {
+    return typeof window === "undefined" ? undefined : window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
 
 function VerificationDetails({ value }: { value?: SkillVerification }) {
   if (!value) return null;
@@ -66,7 +85,13 @@ export default function SkillCenter({
   const [scan, setScan] = useState<SkillScan>();
   const [selected, setSelected] = useState<string[]>([]);
   const [query, setQuery] = useState("");
-  const [source, setSource] = useState("全部");
+  const [source, setSource] = useState(ALL_SOURCE);
+  const storage = browserStorage();
+  const [sourceState, setSourceState] = useState<SourceState>(() => loadSourceState(browserStorage()));
+  const [toolUsage, setToolUsage] = useState<ToolUsage>();
+  const [draggingSource, setDraggingSource] = useState<string>();
+  const [dragOverSource, setDragOverSource] = useState<string>();
+  const draggingRef = useRef<string | undefined>(undefined);
   const [cleanupOnly, setCleanupOnly] = useState(false);
   const [detail, setDetail] = useState<SkillItem>();
   const [copyOpen, setCopyOpen] = useState(false);
@@ -93,9 +118,13 @@ export default function SkillCenter({
   // 旧运行实例可能没有注入 skills 能力，这里先行判断，避免把 TypeError 抛给用户。
   const canScan = typeof api.skills === "function";
   const items = scan?.items ?? [];
-  const sources = useMemo(
-    () => ["全部", ...Array.from(new Set(items.map((item) => item.source)))],
+  const discoveredSources = useMemo(
+    () => Array.from(new Set(items.map((item) => item.source))),
     [items],
+  );
+  const sources = useMemo(
+    () => orderSources(discoveredSources, sourceState, toolUsage),
+    [discoveredSources, sourceState, toolUsage],
   );
   const filtered = useMemo(
     () =>
@@ -234,6 +263,43 @@ export default function SkillCenter({
   useEffect(() => {
     void runScan();
   }, [runScan]);
+  useEffect(() => {
+    if (typeof api.toolUsage !== "function") return;
+    let active = true;
+    api.toolUsage()
+      .then((value) => {
+        if (active) setToolUsage(value);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [api, scan]);
+  const didPersist = useRef(false);
+  useEffect(() => {
+    if (!didPersist.current) {
+      didPersist.current = true;
+      return;
+    }
+    saveSourceState(storage, sourceState);
+  }, [sourceState, storage]);
+  const selectSource = (value: string) => {
+    setSource(value);
+  };
+  const reorderSource = (from: string | undefined, to: string | undefined) => {
+    if (!from || !to || from === ALL_SOURCE || to === ALL_SOURCE || from === to) return;
+    const current = sources.filter((value) => value !== ALL_SOURCE);
+    setSourceState((old) => ({ ...old, order: moveSource(current, from, to) }));
+  };
+  const usageHint = (value: string) => {
+    const id = sourceProductId(value);
+    const entry = id ? toolUsage?.tools[id] : undefined;
+    if (!entry?.opens) return "拖动可调整顺序，顺序会记住";
+    const when = entry.lastOpenedAt
+      ? ` · 最近 ${new Date(entry.lastOpenedAt).toLocaleString()}`
+      : "";
+    return `本机已记录打开 ${entry.opens} 次${when}；拖动可调整顺序，顺序会记住`;
+  };
   const toggle = (id: string) => {
     if (operation.current) return;
     invalidatePreview();
@@ -447,16 +513,56 @@ export default function SkillCenter({
               placeholder="搜索名称、用途或功能"
             />
           </div>
-          <div className="segmented">
-            {sources.map((value) => (
-              <button
-                key={value}
-                className={source === value ? "active" : ""}
-                onClick={() => setSource(value)}
-              >
-                {value}
-              </button>
-            ))}
+          <div className="segmented" role="tablist" aria-label="按来源筛选 Skill">
+            {sources.map((value) => {
+              const draggable = value !== ALL_SOURCE;
+              return (
+                <button
+                  key={value}
+                  role="tab"
+                  aria-selected={source === value}
+                  className={[
+                    source === value ? "active" : "",
+                    draggingSource === value ? "dragging" : "",
+                    dragOverSource === value ? "drag-over" : "",
+                  ].filter(Boolean).join(" ")}
+                  draggable={draggable}
+                  title={draggable ? usageHint(value) : undefined}
+                  onClick={() => selectSource(value)}
+                  onDragStart={(event) => {
+                    if (!draggable) return;
+                    draggingRef.current = value;
+                    setDraggingSource(value);
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", value);
+                  }}
+                  onDragOver={(event) => {
+                    const from = draggingRef.current;
+                    if (!draggable || !from || from === value) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setDragOverSource(value);
+                  }}
+                  onDragLeave={() => {
+                    setDragOverSource((current) => (current === value ? undefined : current));
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    reorderSource(draggingRef.current, value);
+                    draggingRef.current = undefined;
+                    setDraggingSource(undefined);
+                    setDragOverSource(undefined);
+                  }}
+                  onDragEnd={() => {
+                    draggingRef.current = undefined;
+                    setDraggingSource(undefined);
+                    setDragOverSource(undefined);
+                  }}
+                >
+                  {value}
+                </button>
+              );
+            })}
           </div>
           <button className={`skill-cleanup-filter ${cleanupOnly ? "active" : ""}`} type="button" onClick={() => setCleanupOnly((old) => !old)} aria-pressed={cleanupOnly}>
             建议清理 <span>{cleanupCount}</span>
