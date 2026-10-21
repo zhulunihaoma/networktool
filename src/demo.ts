@@ -311,10 +311,17 @@ export function createDemoAPI(): DesktopAPI {
   const assistant = createDemoAssistant();
   return {
     ...assistant,
+    memories: async (agent) => ({ agent, mode: "demo", checkedAt: Date.now(), documents: [], nodes: [], edges: [], roots: [], warnings: ["浏览器演示不读取本机记忆，请在桌面本地模式使用。"] }),
+    chooseMemoryDirectory: async () => { throw new Error("浏览器演示不能选择本机目录，请使用桌面本地模式。"); },
+    discoverHandoffTools: async () => [],
     listSourceTasks: async () => { throw new Error("演示模式不读取私人会话，请使用桌面本地模式。"); },
+    browseSourceTasks: async () => { throw new Error("演示模式不读取私人会话与项目，请使用桌面本地模式。"); },
     importSourceTask: async () => { throw new Error("演示模式不导入私人会话。"); },
     chooseHandoffFile: async () => { throw new Error("演示模式不读取本地文件。"); },
     previewHandoff: async () => { throw new Error("请在桌面本地模式中导入真实任务后预览。"); },
+    scanHandoffAttachments: async () => { throw new Error("演示模式不读取本地附件。"); },
+    addHandoffAttachments: async () => { throw new Error("演示模式不读取本地附件。"); },
+    exportHandoffPackage: async () => { throw new Error("演示模式不导出附件。"); },
     copyHandoff: async () => { throw new Error("演示模式不会复制任务内容。"); },
     skills: async (): Promise<SkillScan> => ({
       items: [],

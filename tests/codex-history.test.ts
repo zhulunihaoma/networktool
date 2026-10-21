@@ -12,7 +12,7 @@ const user = (message: string) => ({ type: "event_msg", payload: { type: "user_m
 const responseUser = (message: string) => ({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: message }] } });
 const lines = (...records: unknown[]) => records.map(row => JSON.stringify(row)).join("\n") + "\n";
 
-test("default discovery uses native Codex history, not WisCode's CODEX_HOME", () => {
+test("default discovery uses native Codex history, not OpenCode's CODEX_HOME", () => {
   const history = new CodexHistory();
   assert.equal((history as unknown as { sessionsRoot: string }).sessionsRoot, path.join(os.homedir(), ".codex", "sessions"));
 });
@@ -52,6 +52,20 @@ test("recognizes legacy and modern user text, with a cwd fallback", async () => 
   assert.equal((await history.importSession(id)).messageCount, 2);
 }));
 
+test("AGENTS.md context is not shown as a conversation title or user request", async () => fixture(async (history, file) => {
+  await writeFile(file, lines(meta(), user("# AGENTS.md instructions\n<INSTRUCTIONS>\nInternal project rules\n</INSTRUCTIONS>"), user("调整任务接续布局")));
+  assert.equal((await history.list())[0].title, "调整任务接续布局");
+  const imported = await history.importSession(id);
+  assert.equal(imported.messageCount, 1);
+  assert.doesNotMatch(imported.transcript, /Internal project rules|AGENTS.md instructions/);
+}));
+
+test("a user question mentioning AGENTS.md remains a real request", async () => fixture(async (history, file) => {
+  await writeFile(file, lines(meta(), user("# AGENTS.md instructions\n请解释这个文件的作用")));
+  assert.match((await history.list())[0].title, /请解释/);
+  assert.match((await history.importSession(id)).transcript, /请解释/);
+}));
+
 test("rejects changed identity and malformed selected history without importing a partial transcript", async () => fixture(async (history, file) => {
   await writeFile(file, lines(meta(), user("请求")));
   await history.list();
@@ -88,8 +102,8 @@ test("Codex source flows through the manager into a one-use preview", async () =
   await assert.rejects(manager.importSession("ses_demo", "OpenCode"), /列表/);
   const imported = await manager.importSession(id, "Codex");
   assert.equal(imported.messageCount, 2);
-  const preview = manager.prepare("核对后继续", "WisCode");
-  assert.match(preview.content, /Codex → WisCode/);
+  const preview = manager.prepare("核对后继续", "OpenCode");
+  assert.match(preview.content, /Codex → OpenCode/);
   assert.equal(manager.consume(preview.token), preview.content);
   assert.throws(() => manager.consume(preview.token), /过期/);
 }));

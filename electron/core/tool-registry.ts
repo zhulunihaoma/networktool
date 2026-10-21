@@ -79,7 +79,7 @@ export async function discoverKnownTools(): Promise<{
           "-NoProfile",
           "-NonInteractive",
           "-Command",
-          "$roots=@('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*','HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*','HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'); Get-ItemProperty -Path $roots -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match '^(Codex|Cursor|Microsoft Visual Studio Code|Visual Studio Code|ChatGPT|Claude|OpenCode|WorkBuddy|WisCode|DSH Desktop|DeepSeek Harness|CC Switch|NAMIAI|Windsurf|Trae|Kiro|Zed)( |$)' } | Select-Object DisplayName,DisplayVersion,InstallLocation | ConvertTo-Json -Compress",
+          "$roots=@('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*','HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*','HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'); Get-ItemProperty -Path $roots -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match '^(Codex|Cursor|Microsoft Visual Studio Code|Visual Studio Code|ChatGPT|Claude|OpenCode|WorkBuddy|ZCode|WisCode|DSH Desktop|DeepSeek Harness|CC Switch|NAMIAI|Windsurf|Trae|Kiro|Zed)( |$)' } | Select-Object DisplayName,DisplayVersion,InstallLocation | ConvertTo-Json -Compress",
         ],
         { timeout: 5000, maxBuffer: 1024 * 1024, windowsHide: true },
       );

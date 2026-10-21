@@ -147,7 +147,15 @@ export const TOOL_PRODUCTS: readonly ToolProduct[] = [
     apps: ["WorkBuddy"],
     cli: [],
     packageName: "",
-    bundleIds: ["com.workbuddy.workbuddy"],
+    bundleIds: ["com.workbuddy.workbuddy", "com.tencent.workbuddy.mac"],
+  },
+  {
+    id: "zcode",
+    name: "ZCode",
+    apps: ["ZCode"],
+    cli: ["zcode"],
+    packageName: "",
+    bundleIds: ["dev.zcode.app"],
   },
   {
     id: "wiscode",

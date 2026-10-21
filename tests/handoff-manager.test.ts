@@ -19,16 +19,16 @@ test("only listed sessions are exported; fixed argv, no shell inputs", async () 
 test("preview is one-use and invalidated on reimport; duplicate does not append", () => {
   const manager = new HandoffManager();
   manager.importRaw(data());
-  const first = manager.prepare("完成测试", "WisCode");
-  assert.match(first.content, /WisCode/);
+  const first = manager.prepare("完成测试", "OpenCode");
+  assert.match(first.content, /OpenCode/);
   assert.throws(() => manager.consume("fake"), /过期/);
   assert.throws(() => manager.consume(first.token, () => { throw new Error("clipboard unavailable"); }), /clipboard unavailable/);
   assert.equal(manager.consume(first.token), first.content);
   assert.throws(() => manager.consume(first.token), /过期/);
-  const second = manager.prepare("继续", "WisCode");
+  const second = manager.prepare("继续", "OpenCode");
   assert.match(manager.importRaw(data()).warnings.join(" "), /不会累加/);
   assert.throws(() => manager.consume(second.token), /过期/);
-  assert.throws(() => manager.prepare(" ", "WisCode"), /目标/);
+  assert.throws(() => manager.prepare(" ", "OpenCode"), /目标/);
 });
 test("bounded file import and malformed import keep last valid source", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "handoff-test-"));
@@ -46,7 +46,7 @@ test("bounded file import and malformed import keep last valid source", async ()
     }
     await writeFile(file, "invalid");
     await assert.rejects(manager.importFile(file), /JSON/);
-    assert.match(manager.prepare("继续", "WisCode").content, /ses_demo/);
+    assert.match(manager.prepare("继续", "OpenCode").content, /ses_demo/);
     await writeFile(file, " ".repeat(8 * 1024 * 1024 + 1));
     await assert.rejects(manager.importFile(file), /8 MB/);
     await assert.rejects(manager.importFile(root));
@@ -61,4 +61,33 @@ test("session mismatch rejected; concurrent reads prevented", async () => {
   const importing = manager.importSession("ses_demo");
   release(data("ses_wrong"));
   await assert.rejects(importing, /不一致/);
+});
+
+test("changing content selection replaces the copy token and clipboard gets exactly the preview", () => {
+  const manager = new HandoffManager();
+  manager.importRaw(data());
+  const full = manager.prepare("继续", "Codex");
+  const selected = manager.prepare("继续", "Codex", { includeTranscript: false, includeWorkspace: false });
+  assert.throws(() => manager.consume(full.token), /过期/);
+  assert.doesNotMatch(selected.content, /继续测试|\/project/);
+  let copied = "";
+  manager.consume(selected.token, value => { copied = value; });
+  assert.equal(copied, selected.content);
+  assert.throws(() => manager.consume(selected.token), /过期/);
+});
+
+test("asynchronous clipboard errors keep the preview retryable and pending writes block duplicate copies", async () => {
+  const manager = new HandoffManager();
+  manager.importRaw(data());
+  const preview = manager.prepare("继续", "Codex");
+  await assert.rejects(manager.copy(preview.token, async () => { throw new Error("clipboard unavailable"); }), /clipboard unavailable/);
+  let finish!: () => void;
+  let written = "";
+  const copying = manager.copy(preview.token, content => { written = content; return new Promise(resolve => { finish = resolve; }); });
+  await assert.rejects(manager.copy(preview.token, async () => {}), /过期/);
+  assert.throws(() => manager.prepare("新的目标", "Codex"), /尚未完成/);
+  finish();
+  await copying;
+  assert.equal(written, preview.content);
+  await assert.rejects(manager.copy(preview.token, async () => {}), /过期/);
 });

@@ -57,6 +57,7 @@ import Modal from "./Modal";
 import FileProtection from "./FileProtection";
 import SkillCenter from "./SkillCenter";
 import TaskHandoff from "./TaskHandoff";
+import MemoryWorkbench from "./MemoryWorkbench";
 import { suggestedEndpoints } from "./shared/tool-network";
 import {
   FEATURE_LABELS,
@@ -78,6 +79,7 @@ type Page =
   | "settings"
   | "files"
   | "skills"
+  | "memory"
   | "handoff";
 const statusText: Record<string, string> = {
   preparing: "准备中",
@@ -303,6 +305,7 @@ export default function App() {
               label: "Skill 中心",
               icon: Sparkles,
             },
+            { id: "memory" as const, label: "记忆工作台", icon: Layers3 },
             nav[5],
           ].map((item) => (
             <button
@@ -368,6 +371,7 @@ export default function App() {
                   ? "文件策略与审计"
                   : page === "skills"
                     ? "Skill 中心"
+                  : page === "memory" ? "记忆工作台"
                   : page === "handoff" ? "任务接续" : nav.find((n) => n.id === page)?.label}
             </span>
           </div>
@@ -396,7 +400,7 @@ export default function App() {
             )}
           </div>
         )}
-        <main>
+        <main className={page === "handoff" ? "handoff-main" : undefined}>
           {errorMessage && (
             <div className="notice amber persistent-error" role="alert">
               <TriangleAlert size={18} />
@@ -447,6 +451,7 @@ export default function App() {
           {page === "skills" && (
             <SkillCenter api={api} onError={(text) => notify(text, true)} />
           )}
+          {page === "memory" && <MemoryWorkbench api={api} />}
           <div hidden={page !== "handoff"} key={demo ? "demo-handoff" : "local-handoff"}>
             <TaskHandoff api={api} onError={(text) => notify(text, true)} />
           </div>

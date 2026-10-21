@@ -7,10 +7,17 @@ import type {
   TriageRun,
 } from "../src/shared/types";
 const api: DesktopAPI = {
+  memories: (agent) => ipcRenderer.invoke("memories", agent),
+  chooseMemoryDirectory: (agent, mode) => ipcRenderer.invoke("choose-memory-directory", agent, mode),
+  discoverHandoffTools: () => ipcRenderer.invoke("handoff-tools"),
   listSourceTasks: (source) => ipcRenderer.invoke("handoff-list", source),
+  browseSourceTasks: (source, query) => ipcRenderer.invoke("handoff-browse", source, query),
   importSourceTask: (id, source) => ipcRenderer.invoke("handoff-import", id, source),
   chooseHandoffFile: () => ipcRenderer.invoke("handoff-file"),
-  previewHandoff: (goal, target) => ipcRenderer.invoke("handoff-preview", goal, target),
+  previewHandoff: (goal, target, options) => ipcRenderer.invoke("handoff-preview", goal, target, options),
+  scanHandoffAttachments: (session) => ipcRenderer.invoke("handoff-attachments", session),
+  addHandoffAttachments: (session) => ipcRenderer.invoke("handoff-attachments-add", session),
+  exportHandoffPackage: (token) => ipcRenderer.invoke("handoff-export", token),
   copyHandoff: (token) => ipcRenderer.invoke("handoff-copy", token),
   skills: () => ipcRenderer.invoke("skills"),
   previewSkills: (ids, target) => ipcRenderer.invoke("preview-skills", ids, target),

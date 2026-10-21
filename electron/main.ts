@@ -13,6 +13,8 @@ import path from "node:path";
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
+import { HANDOFF_SOURCES, HANDOFF_TARGETS } from "../src/shared/handoff-api";
+import { discoverHandoffTools } from "./core/handoff-tools";
 import { Store } from "./core/store";
 import { Manager } from "./core/manager";
 import { listProcesses, collectConnections } from "./core/collector";
@@ -36,6 +38,7 @@ import { FilePolicies } from "./core/file-policies";
 import { SkillScanner } from "./core/skills";
 import { ToolUsageTracker } from "./core/tool-usage";
 import { HandoffManager } from "./core/handoff";
+import { MemoryScanner } from "./core/memory";
 import { ADAPTER_SOURCE_URLS } from "../src/shared/adapters";
 import {
   networkSnapshot,
@@ -213,18 +216,42 @@ app
         return fn(...args);
       });
     handle("overview", () => manager.overview());
+    const memories = new MemoryScanner(app.getPath("home"));
+    const memoryAgent = z.enum(["codex", "claude", "gemini", "cursor", "opencode"]);
+    handle("memories", (agent) => memories.scan(memoryAgent.parse(agent)));
+    handle("choose-memory-directory", async (agent, mode) => {
+      const selectedAgent = memoryAgent.parse(agent);
+      const selectedMode = z.enum(["project", "memory"]).parse(mode);
+      const result = await dialog.showOpenDialog(win!, {
+        title: selectedMode === "project" ? "选择项目以读取 Agent 指令" : "选择本地记忆文档目录",
+        properties: ["openDirectory"],
+      });
+      if (result.canceled || !result.filePaths[0]) return;
+      if (selectedMode === "project") memories.setProject(result.filePaths[0]);
+      else memories.addDirectory(selectedAgent, result.filePaths[0]);
+      return memories.scan(selectedAgent);
+    });
     const handoffs = new HandoffManager();
-    handle("handoff-list", (source) => handoffs.list(z.enum(["OpenCode", "Codex"]).parse(source || "OpenCode")));
-    handle("handoff-import", (id, source) => handoffs.importSession(z.string().max(150).parse(id), z.enum(["OpenCode", "Codex"]).parse(source || "OpenCode")));
+    handle("handoff-tools", () => discoverHandoffTools());
+    handle("handoff-list", (source) => handoffs.list(z.enum(HANDOFF_SOURCES).parse(source || "OpenCode")));
+    handle("handoff-browse", (source, query) => handoffs.browse(z.enum(HANDOFF_SOURCES).parse(source || "OpenCode"), z.object({ projectId: z.string().max(4096).optional(), cursor: z.string().uuid().optional(), search: z.string().max(500).optional() }).strict().optional().parse(query)));
+    handle("handoff-import", (id, source) => handoffs.importSession(z.string().max(150).parse(id), z.enum(HANDOFF_SOURCES).parse(source || "OpenCode")));
     handle("handoff-file", async () => {
       const result = await dialog.showOpenDialog(win!, { title: "导入 OpenCode 导出会话", properties: ["openFile"], filters: [{ name: "OpenCode JSON", extensions: ["json"] }] });
       if (result.canceled || !result.filePaths[0]) return;
       return handoffs.importFile(result.filePaths[0]);
     });
-    handle("handoff-preview", (goal, target) => handoffs.prepare(z.string().min(1).max(4000).parse(goal), z.enum(["WisCode", "OpenCode", "Codex", "WorkBuddy"]).parse(target)));
-    handle("handoff-copy", (token) => {
-      handoffs.consume(z.string().uuid().parse(token), (content) => clipboard.writeText(content));
-    });
+    handle("handoff-preview", (goal, target, options) => handoffs.prepare(z.string().min(1).max(4000).parse(goal), z.enum(HANDOFF_TARGETS).parse(target), z.object({ includeTranscript: z.boolean(), includeWorkspace: z.boolean(), packAttachments: z.boolean().optional(), attachmentIds: z.array(z.string().uuid()).max(128).optional(), attachmentScanToken: z.string().uuid().optional(), allowPartialAttachments: z.boolean().optional() }).strict().optional().parse(options)));
+    handle("handoff-attachments", (session) => handoffs.scanAttachments(z.string().uuid().parse(session)));
+    handle("handoff-attachments-add", (session) => handoffs.addAttachments(z.string().uuid().parse(session),async () => {
+      const result = await dialog.showOpenDialog(win!,{title:"补充本次接力的附件",properties:["openFile","multiSelections"]});
+      return result.canceled ? [] : result.filePaths;
+    }));
+    handle("handoff-export", (token) => handoffs.exportPackage(z.string().uuid().parse(token),async () => {
+      const result = await dialog.showOpenDialog(win!,{title:"选择附件接力包的保存目录",properties:["openDirectory","createDirectory"]});
+      return result.canceled ? undefined : result.filePaths[0];
+    }));
+    handle("handoff-copy", (token) => handoffs.copy(z.string().uuid().parse(token), (content) => clipboard.writeText(content)));
     handle("skills", () => skills.scan());
     handle("preview-skills", (ids, target) => skills.preview(z.array(z.string().max(200)).max(500).parse(ids), z.string().max(40).parse(target)));
     handle("copy-skills", (ids, target, token, autoConvert) => skills.copy(z.array(z.string().max(200)).max(500).parse(ids), z.string().max(40).parse(target), z.string().max(100).parse(token), z.boolean().parse(autoConvert)));

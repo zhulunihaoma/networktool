@@ -4,6 +4,7 @@ import App from "./App";
 import "./styles.css";
 import "./styles-skill.css";
 import "./styles-handoff.css";
+import "./styles-memory.css";
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />
