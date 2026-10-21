@@ -1,6 +1,7 @@
 import type { AssistantAPI as importAssistantAPI } from "./assistant";
 import type { HandoffAPI } from "./handoff-api";
 import type { MemoryAPI } from "./memory";
+import type { AppUpdateAPI } from "./app-update";
 import type { SkillCopyResult, SkillScan, SkillCopyPreview, SkillDeletePreview, SkillDeleteResult, SkillTrashEntry } from "./skills";
 import type { ToolDiagnosisReference, ToolDiagnosisContext } from "./assistant";
 import type { ToolUsage } from "./tool-usage";
@@ -142,7 +143,7 @@ export interface ExportPreview {
   content: string;
   format: "md" | "json";
 }
-export interface DesktopAPI extends importAssistantAPI, HandoffAPI, MemoryAPI {
+export interface DesktopAPI extends importAssistantAPI, HandoffAPI, MemoryAPI, AppUpdateAPI {
   skills(): Promise<SkillScan>;
   previewSkills(ids: string[], target: string): Promise<SkillCopyPreview>;
   copySkills(ids: string[], target: string, token: string, autoConvert: boolean): Promise<SkillCopyResult[]>;

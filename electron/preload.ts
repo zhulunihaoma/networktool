@@ -6,12 +6,31 @@ import type {
   ProviderScan,
   TriageRun,
 } from "../src/shared/types";
+import type { AppUpdateState } from "../src/shared/app-update";
 const api: DesktopAPI = {
+  appUpdate: () => ipcRenderer.invoke("app-update-state"),
+  setAppUpdateSource: (source) => ipcRenderer.invoke("app-update-source", source),
+  checkAppUpdate: () => ipcRenderer.invoke("app-update-check"),
+  downloadAppUpdate: () => ipcRenderer.invoke("app-update-download"),
+  cancelAppUpdate: () => ipcRenderer.invoke("app-update-cancel"),
+  revealAppUpdate: () => ipcRenderer.invoke("app-update-reveal"),
+  openAppReleasePage: (source) => ipcRenderer.invoke("app-update-page", source),
+  onAppUpdate: (callback) => {
+    const listener = (_event: unknown, state: AppUpdateState) => callback(state);
+    ipcRenderer.on("app-update", listener);
+    return () => ipcRenderer.removeListener("app-update", listener);
+  },
   memories: (agent) => ipcRenderer.invoke("memories", agent),
   chooseMemoryDirectory: (agent, mode) => ipcRenderer.invoke("choose-memory-directory", agent, mode),
   discoverHandoffTools: () => ipcRenderer.invoke("handoff-tools"),
   listSourceTasks: (source) => ipcRenderer.invoke("handoff-list", source),
   browseSourceTasks: (source, query) => ipcRenderer.invoke("handoff-browse", source, query),
+  readHandoffContext: (id, offset) => ipcRenderer.invoke("handoff-context", id, offset),
+  exportHandoffContext: (id) => ipcRenderer.invoke("handoff-context-export", id),
+  verifyHandoffHistory: (source) => ipcRenderer.invoke("handoff-verify", source),
+  cancelHandoffVerification: () => ipcRenderer.invoke("handoff-verify-cancel"),
+  getHandoffVerification: () => ipcRenderer.invoke("handoff-verify-progress"),
+  addHandoffSourceDirectory: (source) => ipcRenderer.invoke("handoff-source-directory", source),
   importSourceTask: (id, source) => ipcRenderer.invoke("handoff-import", id, source),
   chooseHandoffFile: () => ipcRenderer.invoke("handoff-file"),
   previewHandoff: (goal, target, options) => ipcRenderer.invoke("handoff-preview", goal, target, options),

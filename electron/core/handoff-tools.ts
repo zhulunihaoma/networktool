@@ -26,7 +26,11 @@ export async function discoverHandoffTools(home = os.homedir(), discover: () => 
     WorkBuddy: await exists(path.join(home, ".workbuddy/workbuddy.db")), ZCode: await exists(path.join(home, ".zcode/cli/db/db.sqlite")),
     WisCode: await populated(path.join(home, ".wiscode/claude-agents/projects")) || await populated(path.join(home, ".wiscode/claude/projects")) || await exists(path.join(home, ".wiscode/codex-agents/state_5.sqlite")),
     DeepSeekHarness: await populated(path.join(home, ".dsh/sessions")), CopilotCode: (await Promise.all(copilotRoots(home).map(populated))).some(Boolean),
-    GeminiCLI: await populated(path.join(home, ".gemini/sessions")),
+    GeminiCLI: await populated(path.join(home, ".gemini/sessions")) || await populated(path.join(home, ".gemini/tmp")),
+    VSCode: await populated(path.join(home, "Library/Application Support/Code/User/workspaceStorage")),
+    Cursor: await exists(path.join(home, "Library/Application Support/Cursor/User/globalStorage/state.vscdb")),
+    Windsurf: await populated(path.join(home, "Library/Application Support/Windsurf/User")),
+    Trae: await populated(path.join(home, "Library/Application Support/Trae/User")),
   };
   const out: HandoffTool[] = [];
   for (const id of Object.keys(products) as HandoffTarget[]) {

@@ -58,6 +58,8 @@ import FileProtection from "./FileProtection";
 import SkillCenter from "./SkillCenter";
 import TaskHandoff from "./TaskHandoff";
 import MemoryWorkbench from "./MemoryWorkbench";
+import AppUpdates from "./AppUpdates";
+import { version as projectVersion } from "../package.json";
 import { suggestedEndpoints } from "./shared/tool-network";
 import {
   FEATURE_LABELS,
@@ -356,7 +358,7 @@ export default function App() {
           </button>
           <div className="sidebar-foot">
             <span>360AI盒子</span>
-            <span>v0.3.0</span>
+            <span>v{projectVersion}</span>
           </div>
         </div>
       </aside>
@@ -527,6 +529,7 @@ export default function App() {
           )}
           {page === "settings" && (
             <SettingsPage
+              api={api}
               overview={overview}
               busy={busy}
               demo={demo}
@@ -2011,11 +2014,13 @@ function HistoryPage({
   );
 }
 function SettingsPage({
+  api,
   overview,
   busy,
   demo,
   onSave,
 }: {
+  api: DesktopAPI;
   overview: Overview;
   busy: boolean;
   demo: boolean;
@@ -2029,6 +2034,7 @@ function SettingsPage({
         description="控制记录保留、报告脱敏与诊断能力。"
       />
       <div className="settings-layout">
+        <AppUpdates api={api} demo={demo} />
         <section className="panel settings-panel">
           <div className="section-heading">
             <div>
@@ -2117,8 +2123,8 @@ function SettingsPage({
             <dd>
               <Badge>未接入 · 本地规则可独立使用</Badge>
             </dd>
-            <dt>应用版本</dt>
-            <dd>0.3.0 · 本地规则 v1</dd>
+            <dt>诊断规则</dt>
+            <dd>本地规则 v1</dd>
           </dl>
           <div className="limits-list">
             <h3>明确的观察盲区</h3>

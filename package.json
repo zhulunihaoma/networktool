@@ -11,10 +11,11 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "tsc --noEmit && vite build && node scripts/build.mjs",
-    "start": "electron .",
+    "start": "node scripts/build.mjs && electron .",
     "preview": "vite --host 127.0.0.1",
     "test": "tsx --test tests/*.test.ts",
-    "package": "npm run build && electron-builder --mac dir",
+    "package": "npm run build && electron-builder --mac dir zip",
+    "release:manifest": "node scripts/create-update-manifest.mjs",
     "package:win": "npm run build && electron-builder --win nsis --x64"
   },
   "dependencies": {
@@ -43,6 +44,7 @@
   "build": {
     "appId": "dev.networklens.desktop",
     "productName": "Network Lens",
+    "artifactName": "Network-Lens-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "release"
     },

@@ -1,0 +1,12 @@
+{
+  "gitee": {
+    "label": "Gitee",
+    "repository": "https://gitee.com/eastzebra/networktool",
+    "manifest": "https://gitee.com/eastzebra/networktool/raw/master/updates/stable.json"
+  },
+  "github": {
+    "label": "GitHub",
+    "repository": "https://github.com/zhulunihaoma/networktool",
+    "manifest": "https://raw.githubusercontent.com/zhulunihaoma/networktool/master/updates/stable.json"
+  }
+}

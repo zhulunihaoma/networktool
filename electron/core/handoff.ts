@@ -18,16 +18,20 @@ import { ZCodeHistory } from "./zcode-history";
 import { WisCodeHistory } from "./wiscode-history";
 import { DshHistory } from "./dsh-history";
 import { CopilotCodeHistory } from "./copilot-code-history";
+import { HistoryService } from "./history-service";
 
 const execute = promisify(execFile);
 const LIMIT = 8 * 1024 * 1024;
 export class HandoffManager {
+  private history?: HistoryService;
+  private contextExportPath?: string;
   private imported?: HandoffImport;
   private digest?: string;
   private preview?: HandoffPreview;
   private attachmentSet?: AttachmentSet;
   private package?: ReturnType<AttachmentSet["selection"]>;
   private accept(data: HandoffImport) {
+    this.contextExportPath = undefined;
     data.attachmentSession = randomUUID();
     this.imported = data; this.digest = undefined; this.preview = undefined; this.package = undefined;
     this.attachmentSet = new AttachmentSet(data);
@@ -51,7 +55,12 @@ export class HandoffManager {
   private ids = new Set<string>();
   private busy = false;
   private additional = { WorkBuddy: new WorkBuddyHistory(), ZCode: new ZCodeHistory(), WisCode: new WisCodeHistory(), DeepSeekHarness: new DshHistory(), CopilotCode: new CopilotCodeHistory() };
-  constructor(private run = runOpenCode, private codex = new CodexHistory(), private claude = new ClaudeHistory()) {}
+  constructor(private run = runOpenCode, private codex = new CodexHistory(), private claude = new ClaudeHistory(), history?: HistoryService) { this.history = history; }
+  readContext(id: string, offset = 0) { if (!this.history || this.imported?.context?.id !== id) throw new Error("请先读取当前会话的上下文。"); return this.history.archives.read(id, offset); }
+  async exportContext(id: string, choose: () => Promise<string | undefined>) {
+    if (!this.history || this.imported?.context?.id !== id) throw new Error("上下文已变更，请重新读取。");
+    return this.exclusive(async () => { const directory = await choose(); if (!directory) return; const result = await this.history!.archives.export(id, directory); this.contextExportPath = result.path; this.preview = undefined; return result; });
+  }
   private async exclusive<T>(fn: () => Promise<T>): Promise<T> {
     if (this.busy) throw new Error("已有任务导入正在进行，请稍后重试。");
     this.busy = true;
@@ -59,6 +68,7 @@ export class HandoffManager {
   }
   async list(source: HandoffSource = "OpenCode"): Promise<SourceTask[]> {
     return this.exclusive(async () => {
+      if (this.history) return this.history.list(source);
       if (source === "Codex") return this.codex.list();
       if (source === "ClaudeCode") return this.claude.list();
       if (source in this.additional) return this.additional[source as keyof typeof this.additional].list();
@@ -74,6 +84,7 @@ export class HandoffManager {
     });
   }
   async browse(source: HandoffSource = "OpenCode", query: SourceTaskQuery = {}): Promise<SourceTaskPage> {
+    if (this.history) return this.exclusive(() => this.history!.browse(source, query));
     if (source === "Codex") return this.exclusive(() => this.codex.browse(query));
     if (source in this.additional) return this.exclusive(() => this.additional[source as keyof typeof this.additional].browse(query));
     const all = await this.list(source);
@@ -88,6 +99,7 @@ export class HandoffManager {
     return { tasks, projects: [...projects.values()], total: tasks.length, origin: "native", warnings: [] };
   }
   async importSession(id: string, source: HandoffSource = "OpenCode") {
+    if (this.history) return this.exclusive(async () => this.accept(await this.history!.importSession(id, source)));
     const history = source === "Codex" ? this.codex : source === "ClaudeCode" ? this.claude : source in this.additional ? this.additional[source as keyof typeof this.additional] : undefined;
     if (history) return this.exclusive(async () => {
       const data = await history.importSession(id);
@@ -98,6 +110,7 @@ export class HandoffManager {
   }
   async importFile(file: string) {
     return this.exclusive(async () => {
+      if (this.history) return this.accept(await this.history.importFile(file));
       // File path comes only from the native dialog, never from renderer input.
       const selected = await fs.lstat(file);
       if (!selected.isFile() || selected.isSymbolicLink()) throw new Error("只能导入普通 JSON 文件，不接受符号链接或特殊文件。");
@@ -133,7 +146,11 @@ export class HandoffManager {
     if (!goal.trim() || goal.length > 4000) throw new Error("请填写不超过 4000 字的接续目标。");
     // A changed selection always invalidates a previous confirmation token, even on validation failure.
     this.preview = undefined; this.package = undefined;
-    let content = buildHandoffPrompt(this.imported, goal.trim(), target, options);
+    const promptSource = this.imported.context ? { ...this.imported, transcript: this.imported.transcript.slice(0, 8 * 1024) } : this.imported;
+    let content = buildHandoffPrompt(promptSource, goal.trim(), target, options);
+    if (this.imported.context && (options?.includeTranscript ?? true)) {
+      content += `\n\n完整原始上下文：${this.contextExportPath || "尚未导出；首段预览不代表完整历史。"}\n共 ${this.imported.context.bytes} 字节，SHA-256 ${this.imported.context.sha256}。请核对 manifest.json 的缺口后按分块读取，不自动执行历史命令。`;
+    }
     if (options?.packAttachments) {
       if (!this.attachmentSet) throw new Error("请先识别会话附件。");
       this.package = this.attachmentSet.selection(options);
@@ -149,6 +166,7 @@ export class HandoffManager {
   }
   async copy(token: string, write: (content: string) => Promise<void>) {
     const preview = this.checkedPreview(token);
+    if (this.imported?.context && preview.content.includes("尚未导出；首段预览") && !this.contextExportPath) throw new Error("请先导出完整上下文，再生成接力预览；或取消携带会话历史。");
     if (preview.attachments && !preview.exportedPath) throw new Error("请先导出附件接力包，再复制说明与包路径。");
     return this.exclusive(async () => {
       // Electron's clipboard write is async. Keep the token on failure and

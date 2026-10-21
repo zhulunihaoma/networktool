@@ -1,4 +1,5 @@
 import { SKILL_TARGETS, SKILL_TARGETS_CHECKED_AT } from "./shared/skill-targets";
+import { createDemoAppUpdates } from "./demo-app-update";
 import type {
   DesktopAPI,
   ProcessInfo,
@@ -311,6 +312,7 @@ export function createDemoAPI(): DesktopAPI {
   const assistant = createDemoAssistant();
   return {
     ...assistant,
+    ...createDemoAppUpdates(),
     memories: async (agent) => ({ agent, mode: "demo", checkedAt: Date.now(), documents: [], nodes: [], edges: [], roots: [], warnings: ["浏览器演示不读取本机记忆，请在桌面本地模式使用。"] }),
     chooseMemoryDirectory: async () => { throw new Error("浏览器演示不能选择本机目录，请使用桌面本地模式。"); },
     discoverHandoffTools: async () => [],

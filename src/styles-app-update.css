@@ -1,0 +1,133 @@
+.app-updates .section-heading {
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.app-update-version {
+  color: #60738b;
+  font-size: 12px;
+}
+.app-update-body {
+  padding: 22px 25px;
+  display: grid;
+  gap: 18px;
+}
+.app-update-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: #264d70;
+}
+.app-update-summary strong {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.app-update-summary small {
+  display: block;
+  margin-top: 5px;
+  color: #74859a;
+  font-size: 11px;
+}
+.app-update-summary > svg {
+  color: #2c9975;
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+.app-update-sources {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.app-update-sources > div {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: #f8fafc;
+  font-size: 12px;
+}
+.app-update-sources span {
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  color: #637990;
+}
+.app-update-sources > div:only-child {
+  grid-column: 1 / -1;
+}
+.app-update-sources .failed span,
+.app-update-summary.failed {
+  color: #a45f27;
+}
+.app-update-release {
+  padding: 16px;
+  background: #f1f6fd;
+  border-radius: 9px;
+  display: grid;
+  gap: 9px;
+  font-size: 13px;
+}
+.app-update-release > span {
+  color: #637990;
+  font-size: 12px;
+}
+.app-update-release summary {
+  cursor: pointer;
+  color: #416ca1;
+}
+.app-update-release p {
+  margin-top: 12px;
+  white-space: pre-wrap;
+  line-height: 1.8;
+  max-height: 260px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.app-update-progress {
+  display: grid;
+  gap: 9px;
+}
+.app-update-progress > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: #60738b;
+}
+.app-update-progress progress {
+  width: 100%;
+  height: 9px;
+  accent-color: #527fd3;
+}
+.app-update-actions,
+.app-update-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.app-update-attempts {
+  padding-left: 18px;
+  color: #a45f27;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.app-update-help {
+  font-size: 12px;
+  line-height: 1.8;
+  color: #60738b;
+}
+.app-update-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #5277a5;
+  font-size: 12px;
+}
+@media (max-width: 1100px) {
+  .app-update-sources {
+    grid-template-columns: 1fr;
+  }
+  .app-updates .setting-row {
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+}

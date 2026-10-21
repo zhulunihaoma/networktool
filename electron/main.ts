@@ -38,7 +38,10 @@ import { FilePolicies } from "./core/file-policies";
 import { SkillScanner } from "./core/skills";
 import { ToolUsageTracker } from "./core/tool-usage";
 import { HandoffManager } from "./core/handoff";
+import { HistoryService } from "./core/history-service";
 import { MemoryScanner } from "./core/memory";
+import { AppUpdater } from "./core/app-update";
+import { version as projectVersion } from "../package.json";
 import { ADAPTER_SOURCE_URLS } from "../src/shared/adapters";
 import {
   networkSnapshot,
@@ -58,6 +61,7 @@ let triage: TriageDoctor;
 let files: FilePolicies;
 let skills: SkillScanner;
 let toolUsage: ToolUsageTracker | undefined;
+let appUpdater: AppUpdater | undefined;
 let resettingProbe = false;
 const entry = path.join(__dirname, "../dist/index.html");
 const sessionId = z.string().uuid();
@@ -216,6 +220,26 @@ app
         return fn(...args);
       });
     handle("overview", () => manager.overview());
+    const updatePreference = z.enum(["auto", "gitee", "github"]);
+    const savedSource = updatePreference.safeParse(store.assistant("app-update-source", "auto"));
+    const updater = appUpdater = new AppUpdater({
+      version: app.isPackaged ? app.getVersion() : projectVersion,
+      platform: `${process.platform}-${process.arch}`,
+      directory: path.join(app.getPath("userData"), "updates"),
+      fetch: (url, init) => net.fetch(url instanceof URL ? url.href : url, init),
+      preference: savedSource.success ? savedSource.data : "auto",
+      persistPreference: source => store.putAssistant("app-update-source", source),
+      publish: state => { if (win && !win.isDestroyed()) win.webContents.send("app-update", state); },
+      reveal: file => shell.showItemInFolder(file),
+      openExternal: url => shell.openExternal(url),
+    });
+    handle("app-update-state", () => updater.state());
+    handle("app-update-source", source => updater.setSource(updatePreference.parse(source)));
+    handle("app-update-check", () => updater.check());
+    handle("app-update-download", () => updater.download());
+    handle("app-update-cancel", () => updater.cancel());
+    handle("app-update-reveal", () => updater.reveal());
+    handle("app-update-page", source => updater.openReleasePage(z.enum(["gitee", "github"]).parse(source)));
     const memories = new MemoryScanner(app.getPath("home"));
     const memoryAgent = z.enum(["codex", "claude", "gemini", "cursor", "opencode"]);
     handle("memories", (agent) => memories.scan(memoryAgent.parse(agent)));
@@ -231,10 +255,18 @@ app
       else memories.addDirectory(selectedAgent, result.filePaths[0]);
       return memories.scan(selectedAgent);
     });
-    const handoffs = new HandoffManager();
+    const history = new HistoryService(path.join(app.getPath("userData"), "handoff-history"), app.getPath("home"));
+    const handoffs = new HandoffManager(undefined, undefined, undefined, history);
+    app.once("before-quit", () => history.close());
     handle("handoff-tools", () => discoverHandoffTools());
     handle("handoff-list", (source) => handoffs.list(z.enum(HANDOFF_SOURCES).parse(source || "OpenCode")));
-    handle("handoff-browse", (source, query) => handoffs.browse(z.enum(HANDOFF_SOURCES).parse(source || "OpenCode"), z.object({ projectId: z.string().max(4096).optional(), cursor: z.string().uuid().optional(), search: z.string().max(500).optional() }).strict().optional().parse(query)));
+    handle("handoff-browse", (source, query) => handoffs.browse(z.enum(HANDOFF_SOURCES).parse(source || "OpenCode"), z.object({ projectId: z.string().max(4096).optional(), cursor: z.string().uuid().optional(), search: z.string().max(500).optional(), kind: z.enum(["conversation", "archived", "subagent", "automation", "draft", "deleted", "orphan"]).optional() }).strict().optional().parse(query)));
+    handle("handoff-context", (id, offset) => handoffs.readContext(z.string().uuid().parse(id), z.number().int().nonnegative().optional().parse(offset)));
+    handle("handoff-context-export", (id) => handoffs.exportContext(z.string().uuid().parse(id), async () => { const result = await dialog.showOpenDialog(win!, { title: "导出完整原始上下文（未经脱敏）", properties: ["openDirectory", "createDirectory"] }); return result.canceled ? undefined : result.filePaths[0]; }));
+    handle("handoff-verify", (source) => history.verify(z.enum(HANDOFF_SOURCES).parse(source)));
+    handle("handoff-verify-cancel", () => history.cancelVerification());
+    handle("handoff-verify-progress", () => history.getVerification());
+    handle("handoff-source-directory", async (source) => { const selected = z.enum(HANDOFF_SOURCES).parse(source); const result = await dialog.showOpenDialog(win!, { title: `选择 ${selected} 的数据根目录（配置或 profile 目录）`, properties: ["openDirectory"] }); return result.canceled ? undefined : history.addRoot(selected, result.filePaths[0]); });
     handle("handoff-import", (id, source) => handoffs.importSession(z.string().max(150).parse(id), z.enum(HANDOFF_SOURCES).parse(source || "OpenCode")));
     handle("handoff-file", async () => {
       const result = await dialog.showOpenDialog(win!, { title: "导入 OpenCode 导出会话", properties: ["openFile"], filters: [{ name: "OpenCode JSON", extensions: ["json"] }] });
@@ -594,6 +626,7 @@ app
     app.quit();
   });
 app.on("before-quit", () => {
+  appUpdater?.cancel();
   files?.cancel();
   triage?.stop();
   doctor?.stop();

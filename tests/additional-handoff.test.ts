@@ -120,7 +120,7 @@ test("discovery distinguishes installed tools, history-only tools and unsupporte
   assert.equal(result.find(t => t.id === "ZCode")?.installed, true);
   assert.equal(result.find(t => t.id === "WorkBuddy")?.historyFound, true);
   assert.equal(result.find(t => t.id === "WorkBuddy")?.installed, false);
-  assert.equal(result.find(t => t.id === "VSCode")?.readable, false);
+  assert.equal(result.find(t => t.id === "VSCode")?.readable, true);
   assert.equal(result.find(t => t.id === "GeminiCLI")?.historyFound, false);
   assert(!result.some(t => t.id === "Cursor"));
 }));
