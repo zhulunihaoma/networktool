@@ -588,3 +588,44 @@ test("MCP image content preserves direct Base64 data and mimeType", async () =>
       createHash("sha256").update("mcp-image").digest("hex"),
     );
   }));
+
+test("filtering uses the current index; explicit unchanged refresh preserves verification and changed data invalidates it", async () =>
+  fixture(async home => {
+    const file = path.join(home, ".local/share/opencode/opencode.db");
+    await sqlite(file, db => db.exec("CREATE TABLE project(id TEXT,name TEXT,worktree TEXT);CREATE TABLE session(id TEXT,title TEXT,directory TEXT,project_id TEXT,time_updated INTEGER,parent_id TEXT);CREATE TABLE session_message(id TEXT PRIMARY KEY,session_id TEXT,type TEXT,seq INTEGER,data TEXT);INSERT INTO project VALUES('p','Project','/p');INSERT INTO session VALUES('s','Original','/p','p',1,NULL);INSERT INTO session_message VALUES('u','s','user',1,'{\"text\":\"original body\"}')"));
+    const service = new HistoryService(path.join(home, "owned"), home);
+    try {
+      const first = await service.browse("OpenCode");
+      const verified = await service.verify("OpenCode");
+      assert.equal(verified.coverage?.context, "complete");
+      assert(verified.coverage?.verifiedAt);
+      const filtered = await service.browse("OpenCode", { search: "Original" });
+      assert.equal(filtered.coverage?.context, "complete");
+      assert.equal(filtered.coverage?.verifiedAt, verified.coverage?.verifiedAt);
+      const unchanged = await service.browse("OpenCode", { refresh: true });
+      assert.equal(unchanged.coverage?.context, "complete");
+      await sqlite(file, db => db.exec("UPDATE session SET title='Changed',time_updated=2 WHERE id='s'"));
+      assert.equal((await service.browse("OpenCode", { search: "Changed" })).total, 0);
+      const changed = await service.browse("OpenCode", { refresh: true, search: "Changed" });
+      assert.equal(changed.total, 1);
+      assert.notEqual(changed.revision, first.revision);
+      assert.equal(changed.coverage?.context, "not-checked");
+      assert.equal(changed.coverage?.verifiedAt, undefined);
+    } finally { service.close(); }
+  }));
+
+test("cancelling a verification returns partial progress without reporting a source read failure or complete coverage", async () =>
+  fixture(async home => {
+    await sqlite(path.join(home, ".zcode/cli/db/db.sqlite"), db => db.exec("CREATE TABLE session(id TEXT,title TEXT,directory TEXT,time_updated INTEGER,parent_id TEXT);INSERT INTO session VALUES('s','Session','/p',1,NULL)"));
+    const service = new HistoryService(path.join(home, "owned"), home);
+    try {
+      const archive = service.archives.archive.bind(service.archives);
+      service.archives.archive = async (task, signal) => { service.cancelVerification(); return archive(task, signal); };
+      const result = await service.verify("ZCode");
+      assert.equal(result.cancelled, true);
+      assert.equal(result.complete, false);
+      assert.equal(result.failures.length, 0);
+      assert.equal(service.getVerification()?.cancelled, true);
+      assert.equal((await service.browse("ZCode")).coverage?.context, "not-checked");
+    } finally { service.close(); }
+  }));

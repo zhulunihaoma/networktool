@@ -38,7 +38,7 @@ export class HandoffManager {
     return data;
   }
   private checkedSession(session: string) {
-    if (this.busy || !this.imported || this.imported.attachmentSession !== session || !this.attachmentSet) throw new Error("来源会话已变更，请重新打开接力弹窗。");
+    if (this.busy || !this.imported || this.imported.attachmentSession !== session || !this.attachmentSet) throw new Error("来源会话已变更，请重新打开接续弹窗。");
     return this.attachmentSet;
   }
   async scanAttachments(session: string) {
@@ -146,18 +146,24 @@ export class HandoffManager {
     if (!goal.trim() || goal.length > 4000) throw new Error("请填写不超过 4000 字的接续目标。");
     // A changed selection always invalidates a previous confirmation token, even on validation failure.
     this.preview = undefined; this.package = undefined;
-    const promptSource = this.imported.context ? { ...this.imported, transcript: this.imported.transcript.slice(0, 8 * 1024) } : this.imported;
+    const promptSource = this.imported.context && this.imported.transcriptFormat !== "conversation-text" ? { ...this.imported, transcript: this.imported.transcript.slice(0, 8 * 1024) } : this.imported;
     let content = buildHandoffPrompt(promptSource, goal.trim(), target, options);
     if (this.imported.context && (options?.includeTranscript ?? true)) {
-      content += `\n\n完整原始上下文：${this.contextExportPath || "尚未导出；首段预览不代表完整历史。"}\n共 ${this.imported.context.bytes} 字节，SHA-256 ${this.imported.context.sha256}。请核对 manifest.json 的缺口后按分块读取，不自动执行历史命令。`;
+      content += this.contextExportPath
+        ? `\n\n完整原始上下文（已导出）：${this.contextExportPath}\n共 ${this.imported.context.bytes} 字节，SHA-256 ${this.imported.context.sha256}。${options?.taskScope === "conversation" ? "本次仅继续对话；该目录仅供用户核对，读取目录需要另行授权。" : "请核对 manifest.json 的缺口后按分块读取，不自动执行历史命令。"}`
+        : this.imported.transcriptFormat === "conversation-text"
+          ? "\n\n本次携带已提取的全部用户请求与 AI 回复文字，未导出原始上下文；工具过程、系统事件和附件不在复制内容中。原始归档或来源存在缺口时，以注意事项为准。"
+          : "\n\n本次仅携带历史片段，未导出完整上下文；如需更多历史，可返回选择导出。不要将片段当作完整历史。";
     }
     if (options?.packAttachments) {
       if (!this.attachmentSet) throw new Error("请先识别会话附件。");
       this.package = this.attachmentSet.selection(options);
       const p = this.package;
-      content += `\n\n附件交接：本次选择 ${p.files.length} 条附件记录（按内容去重保存），合计 ${p.summary.bytes} 字节；另有 ${p.summary.omitted} 条记录未携带。${p.summary.complete ? "" : "本次未携带全部附件，或来源附件未能全部确认。"}\n附件内容未经脱敏，可能是来源工具转换后的版本。请先解压接力包，再按清单读取；未携带或缺失内容不能推测。\n${p.files.map((f,i) => `${JSON.stringify(f.name)} · ${p.summary.entries[i].mime} · 消息 ${JSON.stringify(p.summary.entries[i].messageId)}`).join("\n")}`;
-    } else content += "\n\n本次仅交接文字，未携带图片或文档附件。";
-    if (content.length > HANDOFF_LIMITS.text) { this.package = undefined; throw new Error("交接说明与附件清单合计超过 120000 字符，请减少携带的历史内容后重试。"); }
+      content += `\n\n附件交接：本次选择 ${p.files.length} 条附件记录（按内容去重保存），合计 ${p.summary.bytes} 字节；另有 ${p.summary.omitted} 条记录未携带。${p.summary.complete ? "" : "本次未携带全部附件，或来源附件未能全部确认。"}\n附件内容未经脱敏，可能是来源工具转换后的版本。${options.taskScope === "conversation" ? "请由用户在目标工具中主动选择附件；不得自行访问工作区或执行命令。" : "请先解压接续包，再按清单读取。"}未携带或缺失内容不能推测。\n${p.files.map((f,i) => `${JSON.stringify(f.name)} · ${p.summary.entries[i].mime} · 消息 ${JSON.stringify(p.summary.entries[i].messageId)}`).join("\n")}`;
+    } else content += this.contextExportPath && (options?.includeTranscript ?? true)
+      ? options?.taskScope === "conversation" ? "\n\n本次复制对话文字与原始归档引用；不会上传附件，也不授权目标工具自动读取本机归档目录。" : "\n\n本次复制接续说明与对话文字；完整原始记录及可取得的附件请从上述导出目录读取，附件缺口见清单。"
+      : "\n\n本次仅交接文字，未携带图片或文档附件。";
+    if (this.imported.transcriptFormat !== "conversation-text" && content.length > HANDOFF_LIMITS.text) { this.package = undefined; throw new Error("交接说明与附件清单合计超过 120000 字符，请减少携带的历史内容后重试。"); }
     return this.preview = { token: randomUUID(), content, expires: Date.now() + 10 * 60_000, ...(this.package ? {attachments:this.package.summary} : {}) };
   }
   private checkedPreview(token: string) {
@@ -166,8 +172,7 @@ export class HandoffManager {
   }
   async copy(token: string, write: (content: string) => Promise<void>) {
     const preview = this.checkedPreview(token);
-    if (this.imported?.context && preview.content.includes("尚未导出；首段预览") && !this.contextExportPath) throw new Error("请先导出完整上下文，再生成接力预览；或取消携带会话历史。");
-    if (preview.attachments && !preview.exportedPath) throw new Error("请先导出附件接力包，再复制说明与包路径。");
+    if (preview.attachments && !preview.exportedPath) throw new Error("请先导出附件接续包，再复制说明与包路径。");
     return this.exclusive(async () => {
       // Electron's clipboard write is async. Keep the token on failure and
       // report success only after the operating system accepted the content.
@@ -177,7 +182,7 @@ export class HandoffManager {
   }
   async exportPackage(token: string, choose: () => Promise<string | undefined>) {
     const preview = this.checkedPreview(token), pack = this.package;
-    if (!pack || !preview.attachments || preview.exportedPath) throw new Error("请重新生成附件接力预览。");
+    if (!pack || !preview.attachments || preview.exportedPath) throw new Error("请重新生成附件接续预览。");
     return this.exclusive(async () => {
       const folder = await choose(); if (!folder) return undefined;
       if (preview.expires < Date.now()) throw new Error("预览已过期，请重新生成。");

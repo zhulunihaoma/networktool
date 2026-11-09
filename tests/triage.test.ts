@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { TriageDoctor, type TriageDependencies } from "../electron/core/triage";
 import { newTriage, triageText } from "../src/shared/triage";
 import type { TriageRun } from "../src/shared/types";
+import { ipv6RepairPlan, type IPPathReport } from "../src/shared/ip-path";
 const defaults = (): TriageDependencies => ({
   network: async () => ({ count: 1, signature: "hashed-private-addresses" }),
   proxy: async () => "DIRECT",
@@ -148,4 +149,65 @@ test("给IT的排查结果没有内部网络签名或原始代理地址；恢复
   assert.equal(doctor.current().verification, "restored");
   assert.match(triageText(doctor.current()), /用户确认已恢复/);
   assert.equal(newTriage("codex").observation.samples, 0);
+});
+
+const paths = (): IPPathReport => {
+  const report: IPPathReport = {
+    host: "codex-cloud-backend.chatgpt.com", checkedAt: Date.now(), networkKey: "private-key", accessNetworkKey: "hotspot",
+    hasPublicIPv6: true, networkChanged: false,
+    service: { id: "wifi", name: "Wi-Fi", device: "en0", method: "Automatic" },
+    attempts: [
+      { family: 4, interface: "utun6", tcp: true, tls: true, httpStatus: 403, duration: 500 },
+      { family: 6, interface: "en0", tcp: true, tls: false, code: "ECONNRESET", duration: 100 },
+    ],
+  };
+  report.repair = ipv6RepairPlan(report);
+  return report;
+};
+
+test("Codex 补充检查真实服务域名，路径不一致提升为待处理，报告包含可恢复方案但不泄露网络签名", async () => {
+  const { doctor, run } = await scan({ ipPath: async (host) => {
+    assert.equal(host, "codex-cloud-backend.chatgpt.com"); return paths();
+  } });
+  assert.equal(run.steps[3].status, "attention");
+  assert.equal(run.priorityIds[0], "entry");
+  assert.ok(run.steps[3].actions.includes("copy_ipv6_plan"));
+  doctor.authorize(run.id, "copy_ipv6_plan");
+  assert.match(triageText(run), /setv6automatic/);
+  assert.ok(!triageText(run).includes("private-key"));
+  assert.equal(run.verification, "unknown");
+});
+
+test("明确系统代理时不把补充直连失败转成系统 IPv6 修复；双栈都失败也不推荐该命令", async () => {
+  const proxy = await scan({ proxy: async () => "PROXY 127.0.0.1:7890", ipPath: async () => paths() });
+  assert.equal(proxy.run.ipPath?.repair, undefined);
+  assert.throws(() => proxy.doctor.authorize(proxy.run.id, "copy_ipv6_plan"), /不适用/);
+  const failed = await scan({ ipPath: async () => {
+    const report = paths(); report.attempts[0].tls = false; report.repair = ipv6RepairPlan(report); return report;
+  } });
+  assert.equal(failed.run.steps[3].status, "attention");
+  assert.match(failed.run.steps[3].summary, /仅限制 IPv6 不能视为完整修复/);
+  assert.equal(failed.run.ipPath?.repair, undefined);
+});
+
+test("修复后同一热点保留原恢复方案；切回其他网络则拒绝作修复成功归因", async (t) => {
+  let now = Date.now(); t.mock.method(Date, "now", () => now);
+  let report = paths();
+  const { doctor } = await scan({ ipPath: async () => structuredClone(report) });
+  report = { ...paths(), networkKey: "after-ipv6-change", hasPublicIPv6: false, repair: undefined,
+    service: { ...paths().service!, method: "LinkLocal" }, attempts: [paths().attempts[0]] };
+  const rerun = async () => {
+    now += 31_000;
+    doctor.start("codex");
+    for (let i = 0; i < 20 && doctor.current().status === "running"; i++) await new Promise((r) => setImmediate(r));
+    return doctor.current();
+  };
+  const same = await rerun();
+  assert.ok(same.ipv6Recovery);
+  assert.ok(same.steps[3].actions.includes("copy_ipv6_restore"));
+  assert.match(same.comparison!, /先前异常现已通过/);
+  assert.equal(same.verification, "unknown");
+  report.accessNetworkKey = "other-wifi";
+  const other = await rerun();
+  assert.match(other.comparison!, /不能把恢复归因于修复操作/);
 });

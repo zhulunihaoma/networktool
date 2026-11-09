@@ -138,3 +138,13 @@
 .handoff-attachment-issues ul { padding-left: 18px; margin: 10px 0 0; }
 .handoff-attachment-issues li { margin-top: 8px; overflow-wrap: anywhere; }
 .handoff-attachment-issues li span { display: block; color: #718295; font-size: 11px; margin-top: 3px; }
+
+.handoff-task-scope { display: flex; flex-wrap: wrap; gap: 10px 20px; }
+.handoff-task-scope label { display: flex; align-items: center; gap: 7px; font-size: 13px; }
+.handoff-task-scope p { flex-basis: 100%; margin: 0; color: #627386; font-size: 12px; line-height: 1.7; }
+.handoff-history-details { margin: 20px 0; padding: 14px; border: 1px solid var(--line); border-radius: 9px; }
+.handoff-history-details > summary { cursor: pointer; font-size: 13px; color: #526c7d; }
+.handoff-transcript > p, .handoff-transcript .handoff-actions > p { font-size: 13px; line-height: 1.7; color: #627386; }
+.handoff-pagination { align-items: center; margin-top: 10px; font-size: 12px; color: #627386; }
+.handoff-transfer-summary { margin: 14px 0; padding: 12px; background: #f4f7fb; border-radius: 9px; font-size: 12px; line-height: 1.7; }
+.handoff-transfer-summary p { margin: 5px 0 0; }

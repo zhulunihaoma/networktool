@@ -133,6 +133,7 @@ export default function ProvidersBoard({
   const check = async (id?: string) => {
     try {
       setProviders(await api.scanProviders(id));
+      onError("");
     } catch (e) {
       onError((e as Error).message);
     }
@@ -140,6 +141,7 @@ export default function ProvidersBoard({
   const stopCheck = async () => {
     try {
       setProviders(await api.stopProviders());
+      onError("");
     } catch (e) {
       onError((e as Error).message);
     }
@@ -147,6 +149,7 @@ export default function ProvidersBoard({
   const action = async (id?: string) => {
     try {
       setScan(await api.scanPlatforms(id));
+      onError("");
     } catch (e) {
       onError((e as Error).message);
     }
@@ -154,6 +157,7 @@ export default function ProvidersBoard({
   const stop = async () => {
     try {
       setScan(await api.stopPlatforms());
+      onError("");
     } catch (e) {
       onError((e as Error).message);
     }

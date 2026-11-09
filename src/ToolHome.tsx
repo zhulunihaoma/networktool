@@ -46,6 +46,7 @@ export default function ToolHome({
   const action = async (id?: string) => {
     try {
       setScan(await api.scanPlatforms(id));
+      onError("");
     } catch (e) {
       onError((e as Error).message);
     }

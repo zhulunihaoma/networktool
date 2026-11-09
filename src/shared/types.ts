@@ -5,6 +5,7 @@ import type { AppUpdateAPI } from "./app-update";
 import type { SkillCopyResult, SkillScan, SkillCopyPreview, SkillDeletePreview, SkillDeleteResult, SkillTrashEntry } from "./skills";
 import type { ToolDiagnosisReference, ToolDiagnosisContext } from "./assistant";
 import type { ToolUsage } from "./tool-usage";
+import type { IPPathReport, IPv6RepairPlan } from "./ip-path";
 export type Stage =
   | "config"
   | "dns"
@@ -311,6 +312,8 @@ export type TriageAction =
   | "service_status"
   | "reset_probe"
   | "observe"
+  | "copy_ipv6_plan"
+  | "copy_ipv6_restore"
   | "copy_report";
 export type TriageStepStatus =
   | "pending"
@@ -357,4 +360,6 @@ export interface TriageRun {
   observation: TriageObservation;
   verification: "unknown" | "restored" | "still_failed";
   comparison?: string;
+  ipPath?: IPPathReport;
+  ipv6Recovery?: IPv6RepairPlan;
 }

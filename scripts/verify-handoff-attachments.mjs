@@ -216,7 +216,7 @@ try {
   const manual = await put("manual.txt", "附件补充：起点 37，再加 5。");
   const setup = `const fs=require('node:fs'),path=require('node:path'),{DatabaseSync}=require('node:sqlite');
  const db=(rel,schema)=>{const p=path.join(${JSON.stringify(home)},rel);fs.mkdirSync(path.dirname(p),{recursive:true});const d=new DatabaseSync(p);d.exec(schema);return d};
- const w=db('.workbuddy/workbuddy.db','CREATE TABLE sessions(id TEXT,cwd TEXT,title TEXT,updated_at INTEGER,deleted_at INTEGER)');w.prepare('INSERT INTO sessions VALUES(?,?,?,?,?)').run(${JSON.stringify(id)},'/fixture/project','附件接力验证',2,null);w.close();
+ const w=db('.workbuddy/workbuddy.db','CREATE TABLE sessions(id TEXT,cwd TEXT,title TEXT,updated_at INTEGER,deleted_at INTEGER)');w.prepare('INSERT INTO sessions VALUES(?,?,?,?,?)').run(${JSON.stringify(id)},'/fixture/project','附件接续验证',2,null);w.close();
  const z=db('.zcode/cli/db/db.sqlite','CREATE TABLE session(id TEXT,title TEXT,directory TEXT,time_updated INTEGER,parent_id TEXT);CREATE TABLE message(id TEXT,session_id TEXT,time_created INTEGER,data TEXT);CREATE TABLE part(id TEXT,message_id TEXT,session_id TEXT,time_created INTEGER,data TEXT)');
  z.prepare('INSERT INTO session VALUES(?,?,?,?,?)').run('sess_fixture','ZCode图片任务','/fixture/project',2,null);z.prepare('INSERT INTO message VALUES(?,?,?,?)').run('z-u','sess_fixture',1,JSON.stringify({role:'user'}));for(const [i,p]of [{type:'text',text:'继续图片任务'},{type:'file',mime:'image/jpeg',filename:'原始.jpg',url:'zcode-artifact://sess_fixture/tool-result-image'}].entries())z.prepare('INSERT INTO part VALUES(?,?,?,?,?)').run('p'+i,'z-u','sess_fixture',i,JSON.stringify(p));z.close();
  fs.writeFileSync(${JSON.stringify(path.join(dshFolder, "session.v4.jsonl.zstd"))},Buffer.concat(${JSON.stringify(dshRaw)}.split('\\n').filter(Boolean).map(l=>require('node:zlib').zstdCompressSync(Buffer.from(l+'\\n')))));
@@ -309,7 +309,7 @@ try {
   });
   await page.getByRole("tab", { name: /^WorkBuddy/ }).click();
   await expect(page.locator(".handoff-task")).toHaveCount(1);
-  await page.getByRole("button", { name: "接力", exact: true }).click();
+  await page.getByRole("button", { name: "接续", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("可打包 2 条");
   await expect(dialog).toContainText("无法恢复 2 条");
@@ -367,7 +367,7 @@ try {
     dialog.getByRole("checkbox", { name: /我了解存在/ }),
   ).not.toBeChecked();
   await expect(
-    dialog.getByRole("button", { name: "生成接力预览" }),
+    dialog.getByRole("button", { name: "生成接续预览" }),
   ).toBeDisabled();
   await dialog.getByRole("button", { name: "补充文件", exact: true }).click();
   await expect(dialog).toContainText("可打包 3 条");
@@ -377,12 +377,12 @@ try {
   await page.screenshot({
     path: path.join(temporary, "attachments-configure-1440.png"),
   });
-  await dialog.getByRole("button", { name: "生成接力预览" }).click();
+  await dialog.getByRole("button", { name: "生成接续预览" }).click();
   await expect(dialog.locator(".handoff-package-summary")).toContainText(
     "已选 3 条",
   );
   const exportButton = dialog.getByRole("button", {
-    name: "确认并导出附件接力包",
+    name: "确认并导出附件接续包",
     exact: true,
   });
   await expect(exportButton).toBeDisabled();
@@ -441,10 +441,10 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   });
   await dialog.getByRole("button", { name: "调整内容", exact: true }).click();
   await pack.uncheck();
-  await dialog.getByRole("button", { name: "生成接力预览" }).click();
+  await dialog.getByRole("button", { name: "生成接续预览" }).click();
   await expect(dialog.locator(".handoff-package-summary")).toHaveCount(0);
   await expect(
-    dialog.getByRole("button", { name: "确认并复制接力内容", exact: true }),
+    dialog.getByRole("button", { name: "确认并复制接续内容", exact: true }),
   ).toBeVisible();
   await dialog.getByRole("button", { name: "调整内容", exact: true }).click();
   await page.setViewportSize({ width: 1024, height: 720 });

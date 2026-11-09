@@ -27,6 +27,8 @@ import { probeEndpoint } from "./core/provider-probe";
 import { providerHelpText } from "../src/shared/providers";
 import { TRIAGE_TARGETS, triageText } from "../src/shared/triage";
 import { TriageDoctor } from "./core/triage";
+import { inspectIPPaths, validateIPRepair } from "./core/ip-path";
+import { ipv6RepairText } from "../src/shared/ip-path";
 import { TOOL_PRODUCTS } from "../src/shared/assistant";
 import {
   checkExtensionUpdate,
@@ -201,6 +203,7 @@ app
         proxyEndpoint: inspectProxyEndpoint,
         dns: lookupEntrance,
         probe: probePlatform,
+        ipPath: inspectIPPaths,
         processes: listProcesses,
         connections: collectConnections,
       },
@@ -260,7 +263,7 @@ app
     app.once("before-quit", () => history.close());
     handle("handoff-tools", () => discoverHandoffTools());
     handle("handoff-list", (source) => handoffs.list(z.enum(HANDOFF_SOURCES).parse(source || "OpenCode")));
-    handle("handoff-browse", (source, query) => handoffs.browse(z.enum(HANDOFF_SOURCES).parse(source || "OpenCode"), z.object({ projectId: z.string().max(4096).optional(), cursor: z.string().uuid().optional(), search: z.string().max(500).optional(), kind: z.enum(["conversation", "archived", "subagent", "automation", "draft", "deleted", "orphan"]).optional() }).strict().optional().parse(query)));
+    handle("handoff-browse", (source, query) => handoffs.browse(z.enum(HANDOFF_SOURCES).parse(source || "OpenCode"), z.object({ projectId: z.string().max(4096).optional(), cursor: z.string().uuid().optional(), search: z.string().max(500).optional(), kind: z.enum(["conversation", "archived", "subagent", "automation", "draft", "deleted", "orphan"]).optional(), refresh: z.boolean().optional() }).strict().optional().parse(query)));
     handle("handoff-context", (id, offset) => handoffs.readContext(z.string().uuid().parse(id), z.number().int().nonnegative().optional().parse(offset)));
     handle("handoff-context-export", (id) => handoffs.exportContext(z.string().uuid().parse(id), async () => { const result = await dialog.showOpenDialog(win!, { title: "导出完整原始上下文（未经脱敏）", properties: ["openDirectory", "createDirectory"] }); return result.canceled ? undefined : result.filePaths[0]; }));
     handle("handoff-verify", (source) => history.verify(z.enum(HANDOFF_SOURCES).parse(source)));
@@ -273,14 +276,14 @@ app
       if (result.canceled || !result.filePaths[0]) return;
       return handoffs.importFile(result.filePaths[0]);
     });
-    handle("handoff-preview", (goal, target, options) => handoffs.prepare(z.string().min(1).max(4000).parse(goal), z.enum(HANDOFF_TARGETS).parse(target), z.object({ includeTranscript: z.boolean(), includeWorkspace: z.boolean(), packAttachments: z.boolean().optional(), attachmentIds: z.array(z.string().uuid()).max(128).optional(), attachmentScanToken: z.string().uuid().optional(), allowPartialAttachments: z.boolean().optional() }).strict().optional().parse(options)));
+    handle("handoff-preview", (goal, target, options) => handoffs.prepare(z.string().min(1).max(4000).parse(goal), z.enum(HANDOFF_TARGETS).parse(target), z.object({ includeTranscript: z.boolean(), includeWorkspace: z.boolean(), taskScope: z.enum(["project", "conversation"]).optional(), packAttachments: z.boolean().optional(), attachmentIds: z.array(z.string().uuid()).max(128).optional(), attachmentScanToken: z.string().uuid().optional(), allowPartialAttachments: z.boolean().optional() }).strict().optional().parse(options)));
     handle("handoff-attachments", (session) => handoffs.scanAttachments(z.string().uuid().parse(session)));
     handle("handoff-attachments-add", (session) => handoffs.addAttachments(z.string().uuid().parse(session),async () => {
-      const result = await dialog.showOpenDialog(win!,{title:"补充本次接力的附件",properties:["openFile","multiSelections"]});
+      const result = await dialog.showOpenDialog(win!,{title:"补充本次接续的附件",properties:["openFile","multiSelections"]});
       return result.canceled ? [] : result.filePaths;
     }));
     handle("handoff-export", (token) => handoffs.exportPackage(z.string().uuid().parse(token),async () => {
-      const result = await dialog.showOpenDialog(win!,{title:"选择附件接力包的保存目录",properties:["openDirectory","createDirectory"]});
+      const result = await dialog.showOpenDialog(win!,{title:"选择附件接续包的保存目录",properties:["openDirectory","createDirectory"]});
       return result.canceled ? undefined : result.filePaths[0];
     }));
     handle("handoff-copy", (token) => handoffs.copy(z.string().uuid().parse(token), (content) => clipboard.writeText(content)));
@@ -441,12 +444,22 @@ app
           "reset_probe",
           "observe",
           "copy_report",
+          "copy_ipv6_plan",
+          "copy_ipv6_restore",
         ])
         .parse(rawAction);
       triage.authorize(sessionId.parse(id), action);
       if (triage.busy() && action !== "copy_report")
         throw new Error("请先停止正在进行的观察，再执行修复操作。");
       const run = triage.current();
+      if (action === "copy_ipv6_plan" || action === "copy_ipv6_restore") {
+        const plan = action === "copy_ipv6_plan" ? run.ipPath?.repair : run.ipv6Recovery;
+        if (!plan || !run.ipPath) throw new Error("当前结果没有可用的 IPv6 修复或恢复方案，请重新检查。");
+        await validateIPRepair(run.ipPath, action === "copy_ipv6_restore");
+        triage.authorize(sessionId.parse(id), action);
+        clipboard.writeText(action === "copy_ipv6_plan" ? ipv6RepairText(plan) : plan.restoreCommand);
+        return { message: "已复制方案，未修改系统设置。请先保存恢复命令，在本机终端单独执行所需命令，再重连 VPN 并复测。" };
+      }
       if (action === "copy_report") {
         clipboard.writeText(triageText(run));
         return { message: "已复制脱敏排查结果，可交给 IT。" };

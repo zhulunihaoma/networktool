@@ -4,6 +4,8 @@ export interface JsonObserver {
   object?(path: JsonPath, end: boolean): void;
   stringStart?(path: JsonPath): boolean;
   stringChunk?(path: JsonPath, text: string, end: boolean): void;
+  scalar?(path: JsonPath, value: number | boolean | null): void;
+  rootEnd?(): void;
 }
 export class JsonStreamValidator {
   private stack: {
@@ -22,7 +24,13 @@ export class JsonStreamValidator {
     path: JsonPath;
     watch: boolean;
   };
-  private token?: { word?: string; at: number; number?: string };
+  private token?: {
+    word?: string;
+    at: number;
+    number?: string;
+    raw?: string;
+    path: JsonPath;
+  };
   private decoder = new TextDecoder("utf-8", { fatal: true });
   private separator = false;
   values = 0;
@@ -39,6 +47,7 @@ export class JsonStreamValidator {
     } else {
       this.values++;
       this.separator = true;
+      this.observer?.rootEnd?.();
     }
   }
   private append(text: string) {
@@ -89,6 +98,11 @@ export class JsonStreamValidator {
         : !["zero", "int", "fraction", "exp-int"].includes(t.number || "")
     )
       throw new Error("来源 JSON 原始记录不完整。");
+    if (this.observer?.scalar)
+      this.observer.scalar(
+        t.path,
+        t.word ? (t.word === "null" ? null : t.word === "true") : Number(t.raw),
+      );
     this.token = undefined;
     this.done();
   }
@@ -153,6 +167,8 @@ export class JsonStreamValidator {
           const next = this.number(t.number, c);
           if (!next) throw new Error("来源 JSON 数值损坏。");
           t.number = next;
+          if (t.raw !== undefined && t.raw.length < 128) t.raw += c;
+          else t.raw = undefined;
           continue;
         }
         this.finishToken();
@@ -248,6 +264,7 @@ export class JsonStreamValidator {
         this.token = {
           word: c === "t" ? "true" : c === "f" ? "false" : "null",
           at: 1,
+          path: this.valuePath(),
         };
         continue;
       }
@@ -255,6 +272,8 @@ export class JsonStreamValidator {
         this.token = {
           number: c === "-" ? "minus" : c === "0" ? "zero" : "int",
           at: 0,
+          raw: c,
+          path: this.valuePath(),
         };
         continue;
       }

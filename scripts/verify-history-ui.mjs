@@ -60,6 +60,15 @@ try {
   await expect(page.locator(".handoff-task")).toHaveCount(1);
   await expect(page.locator(".handoff-task-title")).toHaveText("草稿");
   await page.getByRole("combobox", { name: "会话类别" }).selectOption("");
+  await page.getByRole("textbox", { name: "搜索对话" }).fill("完整上下文");
+  await expect(page.locator(".handoff-task")).toHaveCount(1);
+  await page.getByRole("tab", { name: /^Codex/ }).click();
+  await expect(page.getByRole("tab", { name: /^ZCode/ })).toBeEnabled();
+  await page.getByRole("tab", { name: /^ZCode/ }).click();
+  await expect(page.getByRole("textbox", { name: "搜索对话" })).toHaveValue(
+    "完整上下文",
+  );
+  await expect(page.locator(".handoff-task")).toHaveCount(1);
   await page
     .getByRole("button", { name: "完整上下文测试", exact: true })
     .click();
@@ -68,6 +77,10 @@ try {
   await expect(context).toBeVisible({ timeout: 30000 });
   await expect(context).toContainText("10.00 MB");
   await expect(context.locator("pre")).toContainText("UI_FULL_HISTORY_BEGIN");
+  await expect(
+    context.getByRole("button", { name: "对话正文（1 条消息）" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await context.getByRole("button", { name: "原始记录", exact: true }).click();
   assert(
     (await context.locator("pre").innerText()).length < 132000,
     "IPC must page the raw context",
@@ -78,6 +91,48 @@ try {
   );
   await context.getByRole("button", { name: "上一片段" }).click();
   await expect(context.locator("pre")).toContainText("UI_FULL_HISTORY_BEGIN");
+  await dialog.getByRole("button", { name: "接续此会话" }).click();
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await expect(
+    dialog.getByRole("textbox", { name: "本次继续做什么" }),
+  ).toBeInViewport({ ratio: 1 });
+  await expect(dialog.locator(".handoff-source")).toContainText("1 条对话消息");
+  await expect(dialog.locator(".handoff-history-details")).not.toHaveAttribute(
+    "open",
+    "",
+  );
+  await page.screenshot({ path: path.join(temporary, "handoff-configure.png") });
+  await dialog.getByRole("radio", { name: "仅继续对话" }).check();
+
+  await expect(
+    dialog.getByRole("button", { name: "生成接续预览" }),
+  ).toBeEnabled();
+  await dialog.getByRole("button", { name: "生成接续预览" }).click();
+  await expect(dialog.locator(".handoff-prompt")).toContainText(
+    "不授权读取或修改工作区文件、执行命令",
+  );
+  assert(
+    (await dialog.locator(".handoff-prompt").innerText()).length < 66000,
+    "large preview must remain bounded",
+  );
+  await dialog.getByRole("button", { name: "末段", exact: true }).click();
+  await expect(dialog.locator(".handoff-prompt")).toContainText(
+    "全部用户请求与 AI 回复文字，未导出原始上下文",
+  );
+  await expect(dialog.locator(".handoff-prompt")).toContainText(
+    "UI_FULL_HISTORY_END",
+  );
+  await expect(dialog.locator(".handoff-prompt")).not.toContainText(
+    "完整原始上下文（已导出）",
+  );
+  await expect(
+    dialog.getByRole("checkbox", { name: /本次仅继续对话/ }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("checkbox", { name: /原任务已停止/ }),
+  ).toHaveCount(0);
+  await dialog.getByRole("button", { name: "调整内容" }).click();
+  await dialog.locator(".handoff-history-details > summary").click();
   await expect(
     context.getByRole("button", { name: "导出完整上下文", exact: true }),
   ).toBeDisabled();
@@ -98,19 +153,19 @@ try {
     (await fs.stat(path.join(destination, dirs[0], "context.txt"))).size,
     manifest.bytes,
   );
-  await dialog.getByRole("button", { name: "接力此会话" }).click();
   await expect(
-    dialog.getByRole("button", { name: "生成接力预览" }),
+    dialog.getByRole("button", { name: "生成接续预览" }),
   ).toBeEnabled();
-  await dialog.getByRole("button", { name: "生成接力预览" }).click();
+  await dialog.getByRole("button", { name: "生成接续预览" }).click();
+  await dialog.getByRole("button", { name: "末段", exact: true }).click();
   await expect(dialog.locator(".handoff-prompt")).toContainText("SHA-256");
   await expect(dialog.locator(".handoff-prompt")).toContainText(
     path.join(destination, dirs[0]),
   );
   await expect(
-    dialog.getByRole("button", { name: "确认并复制接力内容" }),
+    dialog.getByRole("button", { name: "确认并复制接续内容" }),
   ).toBeDisabled();
-  await dialog.getByRole("button", { name: "关闭接力弹窗" }).click();
+  await dialog.getByRole("button", { name: "关闭接续弹窗" }).click();
   await page.screenshot({
     path: path.join(temporary, "history-full-index.png"),
   });
@@ -125,6 +180,7 @@ try {
           "draft classification",
           "10 MB native context through real IPC",
           "bounded context pages",
+          "full dialogue preview before optional raw context export",
           "raw export requires review",
           "full export and hash metadata",
           "handoff points to full package",

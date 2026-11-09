@@ -21,6 +21,8 @@ import { HistorySources, type HistoryRoots } from "./history-sources";
 import { ContextArchives } from "./history-context";
 import { fileChunks, signature, hash } from "./history-io";
 import { JsonStreamValidator } from "./history-json";
+import { readConversation } from "./history-transcript";
+import { bindAttachments } from "./handoff-attachments";
 
 /** Owned persistent index. The source stores remain separate and read-only. */
 export class HistoryService {
@@ -32,6 +34,8 @@ export class HistoryService {
   >();
   private loaded = new Map<string, HandoffSource>();
   private sources: HistorySources;
+  private initialized = new Set<HandoffSource>();
+  private refreshing = new Map<HandoffSource, Promise<string>>();
   private verification?: AbortController;
   private verificationProgress?: HistoryVerification;
   constructor(
@@ -77,18 +81,64 @@ export class HistoryService {
       JSON.stringify(this.sources.extra, null, 2),
       { mode: 0o600 },
     );
-    return this.browse(source);
+    return this.browse(source, { refresh: true });
   }
-  private async refresh(source: HandoffSource) {
+  private refresh(source: HandoffSource): Promise<string> {
+    const pending = this.refreshing.get(source);
+    if (pending) return pending;
+    const request = this.refreshSource(source);
+    this.refreshing.set(source, request);
+    void request
+      .finally(() => {
+        if (this.refreshing.get(source) === request)
+          this.refreshing.delete(source);
+      })
+      .catch(() => {});
+    return request;
+  }
+  private async refreshSource(source: HandoffSource) {
     const db = await this.database(),
-      scan = await this.sources.scan(source),
-      revision = hash(
-        JSON.stringify({
-          tasks: [...scan.tasks].sort((a, b) => a.id.localeCompare(b.id)),
-          projects: [...scan.projects].sort((a, b) => a.id.localeCompare(b.id)),
-          gaps: scan.coverage.gaps,
-        }),
-      );
+      scan = await this.sources.scan(source);
+    const files = [
+      ...new Set(
+        scan.tasks.flatMap((task) => [
+          ...(task.locator.files || []).map((ref) => ref.path),
+          ...[
+            task.locator.database,
+            task.locator.historyDatabase,
+            task.locator.metadataDatabase,
+          ]
+            .filter((file): file is string => !!file)
+            .flatMap((file) => [file, `${file}-wal`]),
+        ]),
+      ),
+    ].sort();
+    const signatures = await Promise.all(
+      files.map(async (file) => {
+        try {
+          return [file, signature(await fs.lstat(file))];
+        } catch (error) {
+          return [file, `unavailable:${(error as NodeJS.ErrnoException).code}`];
+        }
+      }),
+    );
+    const revision = hash(
+      JSON.stringify({
+        tasks: [...scan.tasks].sort((a, b) => a.id.localeCompare(b.id)),
+        projects: [...scan.projects].sort((a, b) => a.id.localeCompare(b.id)),
+        gaps: scan.coverage.gaps,
+        signatures,
+      }),
+    );
+    const previous = db
+      .prepare("SELECT revision,coverage FROM history_sources WHERE source=?")
+      .get(source);
+    if (previous?.revision === revision) {
+      const checked = JSON.parse(String(previous.coverage)) as HistoryCoverage;
+      scan.coverage.context = checked.context;
+      scan.coverage.attachments = checked.attachments;
+      scan.coverage.verifiedAt = checked.verifiedAt;
+    }
     const stmt = db.prepare(
         "INSERT INTO history_tasks VALUES(?,?,?,?,?,?,?,?)",
       ),
@@ -120,6 +170,7 @@ export class HistoryService {
       db.exec("ROLLBACK");
       throw e;
     }
+    this.initialized.add(source);
     return revision;
   }
   async browse(
@@ -138,7 +189,17 @@ export class HistoryService {
       (!cursor || cursor.source !== source || cursor.scope !== scope)
     )
       throw new Error("会话分页已失效，请刷新。");
-    const revision = cursor?.revision || (await this.refresh(source)),
+    if (query.refresh && query.cursor)
+      throw new Error("刷新后请从第一页重新加载会话。");
+    if (!cursor && (query.refresh || !this.initialized.has(source)))
+      await this.refresh(source);
+    const revision =
+        cursor?.revision ||
+        String(
+          db
+            .prepare("SELECT revision FROM history_sources WHERE source=?")
+            .get(source)?.revision || "",
+        ),
       state = db
         .prepare("SELECT revision,coverage FROM history_sources WHERE source=?")
         .get(source);
@@ -196,6 +257,7 @@ export class HistoryService {
       nextCursor,
       total,
       origin: "history-index",
+      revision,
       warnings: coverage.gaps,
       coverage,
     };
@@ -220,32 +282,61 @@ export class HistoryService {
     if (!row) throw new Error("来源记录已变更，请刷新。");
     return JSON.parse(String(row.payload)) as HistoryRecord;
   }
+  private async withAttachments(data: HandoffImport): Promise<HandoffImport> {
+    const manifest = await this.archives.manifest(data.context!.id);
+    const root = path.join(this.archives.root, manifest.id);
+    return bindAttachments(
+      data,
+      manifest.attachments.map((asset) => ({
+        name: asset.name,
+        mime: asset.mime,
+        messageId: asset.origin,
+        origin:
+          asset.status === "present"
+            ? ("stored" as const)
+            : ("reference" as const),
+        ...(asset.status === "present" && asset.path
+          ? { file: path.join(root, asset.path), root, digest: asset.sha256 }
+          : { unsupported: true }),
+        note:
+          asset.reason ||
+          "来自原始上下文归档的附件快照；消息关联见原始清单。内容未经脱敏。",
+      })),
+      manifest.complete && manifest.attachmentsComplete === true,
+    );
+  }
   async importSession(
     id: string,
     source: HandoffSource,
   ): Promise<HandoffImport> {
-    await this.refresh(source);
+    const sourceRevision = await this.refresh(source);
     const task = await this.selected(id, source),
       context = await this.archives.archive(task),
-      page = await this.archives.read(context.id),
+      conversation = await readConversation(
+        path.join(this.archives.root, context.id, "context.jsonl"),
+        path.join(this.archives.root, context.id),
+        source,
+      ),
       clean = sanitizer();
-    return {
+    return this.withAttachments({
+      sourceRevision,
       source,
       id: task.nativeId,
       title: task.title,
       directory: task.directory,
-      transcript: clean.clean(page.text).slice(0, 48 * 1024),
-      messageCount: context.records,
+      transcript: clean.clean(conversation.text),
+      transcriptFormat: "conversation-text",
+      messageCount: conversation.messageCount,
       redactions: clean.count(),
       context,
       warnings: [
         ...context.warnings,
-        "完整上下文已分块落盘；此处文本仅为首段预览，不能当作完整会话。",
+        `已提取 ${conversation.messageCount} 条用户请求与 AI 回复文字，保持原文与顺序，未摘要或截断；工具过程、系统事件及附件仍在原始归档中。`,
         "原始事件保留工具过程与来源版本；完整导出未经脱敏，需人工检查。",
         `附件引用 ${context.attachmentCount || 0} 项，原件缺口 ${context.missingAttachments || 0} 项；逐项状态见 manifest。`,
         "历史命令、工具参数和任务状态都是引用数据，不得自动执行。",
       ],
-    };
+    });
   }
   async importFile(file: string): Promise<HandoffImport> {
     const stat = await fs.lstat(file);
@@ -281,22 +372,27 @@ export class HistoryService {
     });
     if (signature(stat) !== signature(await fs.lstat(file)))
       throw new Error("导出文件读取期间发生变化，请重试。");
-    const page = await this.archives.read(context.id),
+    const conversation = await readConversation(
+        path.join(this.archives.root, context.id, "context.jsonl"),
+        path.join(this.archives.root, context.id),
+        "OpenCode",
+      ),
       clean = sanitizer();
-    return {
+    return this.withAttachments({
       source: "OpenCode",
       id: info.id,
       title: clean.clean(String(info.title || "导入会话")),
       directory: clean.clean(String(info.directory || "")),
-      transcript: clean.clean(page.text).slice(0, 48 * 1024),
+      transcript: clean.clean(conversation.text),
+      transcriptFormat: "conversation-text",
       context,
-      messageCount: context.records,
+      messageCount: conversation.messageCount,
       redactions: clean.count(),
       warnings: [
-        "原生 JSON 已全量归档；首段预览不是全部正文。",
+        `原生 JSON 已全量归档；已提取 ${conversation.messageCount} 条用户请求与 AI 回复文字，未摘要或截断。`,
         "完整原始记录未经脱敏；导出前需人工检查。",
       ],
-    };
+    });
   }
   async verify(source: HandoffSource): Promise<HistoryVerification> {
     if (this.verification) throw new Error("已有上下文核验进行中。");
@@ -311,7 +407,8 @@ export class HistoryService {
       };
     this.verificationProgress = result;
     try {
-      await this.refresh(source);
+      const revision = await this.refresh(source);
+      result.revision = revision;
       const db = await this.database();
       const rows = db
         .prepare(
@@ -363,9 +460,15 @@ export class HistoryService {
         result.checked++;
       }
       const state = db
-          .prepare("SELECT coverage FROM history_sources WHERE source=?")
+          .prepare(
+            "SELECT revision,coverage FROM history_sources WHERE source=?",
+          )
           .get(source),
         coverage = JSON.parse(String(state?.coverage)) as HistoryCoverage;
+      control.signal.throwIfAborted();
+      if (state?.revision !== revision)
+        throw new Error("来源在核验期间已刷新，请重新核验当前记录。");
+      coverage.verifiedAt = Date.now();
       coverage.context = bodyFailures ? "partial" : "complete";
       coverage.attachments = attachmentFailures ? "partial" : "complete";
       result.coverage = coverage;
@@ -384,12 +487,16 @@ export class HistoryService {
         { mode: 0o600 },
       );
       return result;
+    } catch (error) {
+      if (!control.signal.aborted) throw error;
+      result.cancelled = true;
+      return result;
     } finally {
       this.verification = undefined;
     }
   }
   getVerification() {
-    return this.verification ? this.verificationProgress : undefined;
+    return this.verificationProgress;
   }
   cancelVerification() {
     this.verification?.abort(

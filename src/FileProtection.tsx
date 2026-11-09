@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   FolderOpen,
   Loader2,
@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { DesktopAPI, ExportPreview } from "./shared/types";
 import Modal from "./Modal";
+import { operationError } from "./shared/operation-error";
 import type {
   FileWorkspace,
   FilePolicy,
@@ -47,6 +48,10 @@ export default function FileProtection({
   const [busy, setBusy] = useState(false),
     [scanning, setScanning] = useState(false);
   const [message, setMessage] = useState("");
+  const [draftChanged, setDraftChanged] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<() => void>();
+  const saveLock = useRef(false);
+  const [saveError, setSaveError] = useState("");
   const [audit, setAudit] = useState<AuditPage>({ events: [] });
   const [operation, setOperation] = useState("");
   const [tab, setTab] = useState("policies");
@@ -138,6 +143,7 @@ export default function FileProtection({
     setBusy(true);
     setScanning(isScan);
     setMessage("");
+    onError("");
     try {
       const next = await fn();
       if (next) {
@@ -177,6 +183,48 @@ export default function FileProtection({
       enabled: old?.enabled ?? true,
     });
     setMessage("");
+    setDraftChanged(false);
+    setSaveError("");
+  };
+  const leaveDraft = (action: () => void) => {
+    if (busy) return;
+    if (dirty && draftChanged) setPendingNavigation(() => action);
+    else action();
+  };
+  const saveCurrent = async () => {
+    if (saveLock.current || !scope || !candidate || !draft) return false;
+    saveLock.current = true;
+    setSaveError("");
+    setBusy(true);
+    setMessage("");
+    onError("");
+    try {
+      const next = await api.saveFilePolicy(scope.id, draft, expected);
+      setWorkspace(next);
+      setExpected(
+        next.scopes
+          .find((item) => item.id === scope.id)
+          ?.policies.find((item) => item.resourceId === candidate.id)
+          ?.revision || 0,
+      );
+      setDraftChanged(false);
+      setMessage("策略已保存；第三方工具访问仍未覆盖。");
+      try {
+        await loadAudit(scope.id);
+      } catch (error) {
+        onError(
+          `策略已保存，但审计记录刷新未完成：${(error as Error).message}`,
+        );
+      }
+      return true;
+    } catch (error) {
+      setSaveError(operationError(error));
+      onError((error as Error).message);
+      return false;
+    } finally {
+      saveLock.current = false;
+      setBusy(false);
+    }
   };
   return (
     <div className="file-protection">
@@ -189,7 +237,9 @@ export default function FileProtection({
         <button
           className="primary"
           disabled={busy}
-          onClick={() => void act(() => api.chooseFileScope(), true)}
+          onClick={() =>
+            leaveDraft(() => void act(() => api.chooseFileScope(), true))
+          }
         >
           <FolderOpen size={16} />
           选择项目或目录
@@ -227,10 +277,13 @@ export default function FileProtection({
             <span>已有工具、终端与远端</span>
           </div>
         </div>
-        <div className="notice amber">
-          当前不提供“AI
-          未访问”或“全机禁读”的结论。没有采集到记录不代表没有访问；策略自检也不等于系统阻断。
-        </div>
+        <details className="plain-details">
+          <summary>策略自检与实际访问有什么区别？</summary>
+          <p>
+            当前不提供“AI
+            未访问”或“全机禁读”的结论。没有采集到记录不代表没有访问；策略自检也不等于系统阻断。
+          </p>
+        </details>
         <details className="plain-details">
           <summary>查看覆盖边界</summary>
           {workspace?.coverage.gaps.map((gap) => (
@@ -265,10 +318,14 @@ export default function FileProtection({
             disabled={busy}
             value={selected || ""}
             onChange={(e) => {
-              setSelected(e.target.value);
-              setDraft(undefined);
-              setResourceId(undefined);
-              setMessage("");
+              const next = e.target.value;
+              leaveDraft(() => {
+                setSelected(next);
+                setDraft(undefined);
+                setResourceId(undefined);
+                setMessage("");
+                setDraftChanged(false);
+              });
             }}
           >
             <option value="">全部记录 / 未选择</option>
@@ -342,7 +399,9 @@ export default function FileProtection({
                     className="secondary"
                     disabled={busy}
                     onClick={() =>
-                      void act(() => api.chooseSensitiveFile(scope.id))
+                      leaveDraft(
+                        () => void act(() => api.chooseSensitiveFile(scope.id)),
+                      )
                     }
                   >
                     添加指定文件
@@ -351,7 +410,10 @@ export default function FileProtection({
                     className="secondary"
                     disabled={busy}
                     onClick={() =>
-                      void act(() => api.rescanFileScope(scope.id), true)
+                      leaveDraft(
+                        () =>
+                          void act(() => api.rescanFileScope(scope.id), true),
+                      )
                     }
                   >
                     <RefreshCw size={15} />
@@ -375,7 +437,10 @@ export default function FileProtection({
                         key={file.id}
                         className={`candidate-item ${resourceId === file.id ? "selected" : ""}`}
                         disabled={busy}
-                        onClick={() => selectCandidate(file.id)}
+                        onClick={() => {
+                          if (file.id !== resourceId)
+                            leaveDraft(() => selectCandidate(file.id));
+                        }}
                       >
                         <strong>{file.relativePath}</strong>
                         <span>
@@ -401,19 +466,7 @@ export default function FileProtection({
                     className="policy-editor"
                     onSubmit={(event) => {
                       event.preventDefault();
-                      void act(async () => {
-                        const next = await api.saveFilePolicy(
-                          scope.id,
-                          draft,
-                          expected,
-                        );
-                        const saved = next.scopes
-                          .find((s) => s.id === scope.id)
-                          ?.policies.find((p) => p.resourceId === candidate.id);
-                        setExpected(saved?.revision || 0);
-                        setMessage("策略已保存；第三方工具访问仍未覆盖。");
-                        return next;
-                      });
+                      void saveCurrent();
                     }}
                   >
                     <h3>{candidate.relativePath}</h3>
@@ -428,12 +481,13 @@ export default function FileProtection({
                             aria-label={`${operationLabel[op]}策略`}
                             value={draft[op]}
                             disabled={busy}
-                            onChange={(event) =>
+                            onChange={(event) => {
+                              setDraftChanged(true);
                               setDraft({
                                 ...draft,
                                 [op]: event.target.value as FileDecision,
-                              })
-                            }
+                              });
+                            }}
                           >
                             {(["deny", "ask", "allow"] as FileDecision[]).map(
                               (value) => (
@@ -451,9 +505,10 @@ export default function FileProtection({
                         type="checkbox"
                         checked={draft.enabled}
                         disabled={busy}
-                        onChange={(event) =>
-                          setDraft({ ...draft, enabled: event.target.checked })
-                        }
+                        onChange={(event) => {
+                          setDraftChanged(true);
+                          setDraft({ ...draft, enabled: event.target.checked });
+                        }}
                       />
                       在本地校验器启用此规则
                     </label>
@@ -728,6 +783,59 @@ export default function FileProtection({
               }}
             >
               选择位置并保存
+            </button>
+          </div>
+        </Modal>
+      )}
+      {pendingNavigation && (
+        <Modal
+          title="当前策略尚未保存"
+          onClose={() => {
+            if (!busy) setPendingNavigation(undefined);
+          }}
+        >
+          <div className="modal-body">
+            <p>离开前可以保存本次修改，或明确放弃；继续编辑会保留当前内容。</p>
+            {saveError && (
+              <p className="notice amber" role="alert">
+                保存未完成：{saveError}
+                <br />
+                当前修改仍保留，可继续编辑或放弃后刷新。
+              </p>
+            )}
+          </div>
+          <div className="modal-footer">
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={() => setPendingNavigation(undefined)}
+            >
+              继续编辑
+            </button>
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={() => {
+                const next = pendingNavigation;
+                setPendingNavigation(undefined);
+                if (resourceId) selectCandidate(resourceId);
+                next();
+              }}
+            >
+              放弃修改并继续
+            </button>
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={async () => {
+                if (await saveCurrent()) {
+                  const next = pendingNavigation;
+                  setPendingNavigation(undefined);
+                  next();
+                }
+              }}
+            >
+              保存并继续
             </button>
           </div>
         </Modal>

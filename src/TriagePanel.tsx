@@ -10,6 +10,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { newTriage, TRIAGE_TARGETS, TRIAGE_ACTIONS } from "./shared/triage";
+import NetworkPathDetails from "./NetworkPathDetails";
 import type {
   DesktopAPI,
   TriageAction,
@@ -225,6 +226,9 @@ export default function TriagePanel({
                     <p>{step.summary}</p>
                     {step.suggestion && (
                       <p className="triage-advice">{step.suggestion}</p>
+                    )}
+                    {step.id === "entry" && run.ipPath && (
+                      <NetworkPathDetails report={run.ipPath} recovery={run.ipv6Recovery} />
                     )}
                     {step.evidence.length > 0 && (
                       <details className="triage-evidence">

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { operationError } from "./shared/operation-error";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
   ArrowDownToLine,
@@ -150,7 +151,15 @@ export default function App() {
     [demo],
   );
   const [overview, setOverview] = useState<Overview>();
-  const [page, setPage] = useState<Page>("providers");
+  const [page, setPageValue] = useState<Page>("providers");
+  const [retainedPages, setRetainedPages] = useState(
+    new Set<Page>(["providers"]),
+  );
+  const scrollPositions = useRef(new Map<Page, number>());
+  const setPage = (next: Page) => {
+    scrollPositions.current.set(page, window.scrollY);
+    setPageValue(next);
+  };
   const [providerTool, setProviderTool] = useState<ToolInstall>();
   const [triageRequested, setTriageRequested] = useState(false);
   const [selected, setSelected] = useState<Session>();
@@ -161,7 +170,15 @@ export default function App() {
     feature: ToolFeature;
   }>();
   const [toast, setToast] = useState<{ text: string; error?: boolean }>();
-  const [errorMessage, setErrorMessage] = useState("");
+  const [pageErrors, setPageErrors] = useState<Partial<Record<Page, string>>>(
+    {},
+  );
+  const errorMessage = pageErrors[page] || "";
+  const setErrorMessage = (text: string, origin: Page = page) =>
+    setPageErrors((previous) => ({
+      ...previous,
+      [origin]: operationError(text),
+    }));
   const [busy, setBusy] = useState(false);
   const [evidence, setEvidence] = useState<Evidence>();
   const [report, setReport] = useState<ExportPreview>();
@@ -176,6 +193,7 @@ export default function App() {
     success?: string,
   ): Promise<T | undefined> => {
     setBusy(true);
+    setErrorMessage("");
     try {
       const result = await fn();
       if (success) notify(success);
@@ -194,6 +212,9 @@ export default function App() {
   };
   useEffect(() => {
     setSelected(undefined);
+    setPageErrors({});
+    setRetainedPages(new Set<Page>(["providers"]));
+    scrollPositions.current.clear();
     setPage("providers");
     void api
       .overview()
@@ -219,7 +240,12 @@ export default function App() {
     }
   }, [toast]);
   useEffect(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    setRetainedPages((previous) => new Set([...previous, page]));
+    window.scrollTo({
+      top: scrollPositions.current.get(page) || 0,
+      left: 0,
+      behavior: "instant",
+    });
   }, [page]);
   const open = (s: Session, dest: Page = "workspace") => {
     setSelected(s);
@@ -294,9 +320,9 @@ export default function App() {
         <div className="sidebar-label">工作空间</div>
         <nav>
           {[
+            { id: "handoff" as const, label: "任务接续", icon: ArrowRight },
             nav[0],
             nav[1],
-            { id: "handoff" as const, label: "任务接续", icon: ArrowRight },
             {
               id: "files" as const,
               label: "文件策略与审计",
@@ -373,8 +399,11 @@ export default function App() {
                   ? "文件策略与审计"
                   : page === "skills"
                     ? "Skill 中心"
-                  : page === "memory" ? "记忆工作台"
-                  : page === "handoff" ? "任务接续" : nav.find((n) => n.id === page)?.label}
+                    : page === "memory"
+                      ? "记忆工作台"
+                      : page === "handoff"
+                        ? "任务接续"
+                        : nav.find((n) => n.id === page)?.label}
             </span>
           </div>
           <div className="topbar-right">
@@ -420,43 +449,69 @@ export default function App() {
               </button>
             </div>
           )}
-          {page === "providers" && (
-            <ProvidersBoard
-              api={api}
-              onError={(text) => notify(text, true)}
-              onAdvanced={() => setWizard("diagnose")}
-              tool={providerTool}
-              triageRequested={triageRequested}
-              onClearTool={() => setProviderTool(undefined)}
-              onBack={() => setPage("home")}
-            />
+          {(page === "providers" || retainedPages.has("providers")) && (
+            <div hidden={page !== "providers"} key={`providers-${demo}`}>
+              <ProvidersBoard
+                api={api}
+                onError={(text) => setErrorMessage(text, "providers")}
+                onAdvanced={() => setWizard("diagnose")}
+                tool={providerTool}
+                triageRequested={triageRequested}
+                onClearTool={() => setProviderTool(undefined)}
+                onBack={() => setPage("home")}
+              />
+            </div>
           )}
-          {page === "home" && (
-            <ToolHome
-              api={api}
-              onError={(text) => notify(text, true)}
-              onFiles={() => setPage("files")}
-              onProviders={(tool) => {
-                setProviderTool(tool);
-                setTriageRequested(false);
-                setPage("providers");
-              }}
-              onToolDiagnosis={(install, componentId, feature) => {
-                setWizardTool({ install, componentId, feature });
-                setWizard("diagnose");
-              }}
-            />
+          {(page === "home" || retainedPages.has("home")) && (
+            <div hidden={page !== "home"} key={`home-${demo}`}>
+              <ToolHome
+                api={api}
+                onError={(text) => setErrorMessage(text, "home")}
+                onFiles={() => setPage("files")}
+                onProviders={(tool) => {
+                  setProviderTool(tool);
+                  setTriageRequested(false);
+                  setPage("providers");
+                }}
+                onToolDiagnosis={(install, componentId, feature) => {
+                  setWizardTool({ install, componentId, feature });
+                  setWizard("diagnose");
+                }}
+              />
+            </div>
           )}
-          {page === "files" && (
-            <FileProtection api={api} onError={(text) => notify(text, true)} />
+          {(page === "files" || retainedPages.has("files")) && (
+            <div hidden={page !== "files"} key={`files-${demo}`}>
+              <FileProtection
+                api={api}
+                onError={(text) => setErrorMessage(text, "files")}
+              />
+            </div>
           )}
-          {page === "skills" && (
-            <SkillCenter api={api} onError={(text) => notify(text, true)} />
+          {(page === "skills" || retainedPages.has("skills")) && (
+            <div hidden={page !== "skills"} key={`skills-${demo}`}>
+              <SkillCenter
+                api={api}
+                onError={(text) => setErrorMessage(text, "skills")}
+              />
+            </div>
           )}
-          {page === "memory" && <MemoryWorkbench api={api} />}
-          <div hidden={page !== "handoff"} key={demo ? "demo-handoff" : "local-handoff"}>
-            <TaskHandoff api={api} onError={(text) => notify(text, true)} />
-          </div>
+          {(page === "memory" || retainedPages.has("memory")) && (
+            <div hidden={page !== "memory"} key={`memory-${demo}`}>
+              <MemoryWorkbench api={api} />
+            </div>
+          )}
+          {(page === "handoff" || retainedPages.has("handoff")) && (
+            <div
+              hidden={page !== "handoff"}
+              key={demo ? "demo-handoff" : "local-handoff"}
+            >
+              <TaskHandoff
+                api={api}
+                onError={(text) => setErrorMessage(text, "handoff")}
+              />
+            </div>
+          )}
           {page === "workspace" &&
             (selected ? (
               <Workspace

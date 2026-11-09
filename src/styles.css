@@ -3126,6 +3126,22 @@ strong {
   scroll-margin-top: 20px;
   padding: 24px;
 }
+.ip-path-details {
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid #dce3ed;
+  border-radius: 10px;
+  background: #f8fafc;
+  overflow-wrap: anywhere;
+}
+.ip-path-details p { margin: 9px 0; line-height: 1.6; }
+.ip-path-details small { color: #59687d; line-height: 1.6; }
+.ip-path-table-wrap { overflow-x: auto; margin: 12px 0; }
+.ip-path-details table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ip-path-details caption { text-align: left; color: #59687d; margin-bottom: 8px; }
+.ip-path-details th, .ip-path-details td { text-align: left; padding: 8px; border-bottom: 1px solid #dce3ed; }
+.ip-path-repair { margin-top: 12px; padding-top: 12px; border-top: 1px solid #dce3ed; }
+.ip-path-repair pre { white-space: pre-wrap; padding: 10px; border: 1px solid #dce3ed; border-radius: 6px; background: white; }
 .triage-panel {
   background: #fff;
   border: 1px solid #dfe7f3;

@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { HandoffManager } from "../electron/core/handoff";
+import { HistoryService } from "../electron/core/history-service";
 
 const data = (id = "ses_demo") => JSON.stringify({ info: { id, title: "未完成任务", directory: "/project" }, messages: [{ info: { id: "msg_1", sessionID: id, role: "user" }, parts: [{ type: "text", text: "继续测试" }] }] });
 test("only listed sessions are exported; fixed argv, no shell inputs", async () => {
@@ -90,4 +91,72 @@ test("asynchronous clipboard errors keep the preview retryable and pending write
   await copying;
   assert.equal(written, preview.content);
   await assert.rejects(manager.copy(preview.token, async () => {}), /过期/);
+});
+
+test("full context export is optional for previews and copies; exporting adds a full package reference", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "handoff-optional-export-"));
+  const history = new HistoryService(path.join(root, "owned"), root);
+  try {
+    const file = path.join(root, "task.json");
+    await writeFile(file, data());
+    const manager = new HandoffManager(undefined, undefined, undefined, history);
+    const imported = await manager.importFile(file);
+    assert(imported.context);
+    const preview = manager.prepare("继续处理", "Codex");
+    assert.match(preview.content, /全部用户请求与 AI 回复文字，未导出原始上下文/);
+    assert.doesNotMatch(preview.content, /manifest\.json|完整原始上下文（已导出）/);
+    let copied = "";
+    await manager.copy(preview.token, async value => { copied = value; });
+    assert.equal(copied, preview.content);
+
+    const omitted = manager.prepare("继续处理", "Codex", { includeTranscript: false, includeWorkspace: true });
+    assert.match(omitted.content, /未携带会话历史/);
+    assert.doesNotMatch(omitted.content, /来源记录片段预览|未导出完整上下文/);
+
+    const exported = await manager.exportContext(imported.context.id, async () => root);
+    assert(exported);
+    await assert.rejects(manager.copy(omitted.token, async () => {}), /变更或过期/);
+    const full = manager.prepare("继续处理", "Codex");
+    assert(full.content.includes(exported.path));
+    assert.match(full.content, /完整原始上下文（已导出）/);
+    assert.match(full.content, /SHA-256/);
+    assert.doesNotMatch(full.content, /未导出完整上下文|未携带图片或文档附件/);
+    await manager.copy(full.token, async value => { copied = value; });
+    assert.equal(copied, full.content);
+  } finally {
+    history.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("full history archives feed the existing optional attachment selection and package export", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "handoff-full-attachments-"));
+  const history = new HistoryService(path.join(root, "owned"), root);
+  try {
+    const file = path.join(root, "source.json");
+    const exported = JSON.parse(data());
+    exported.messages[0].parts.push({ type: "file", filename: "image.png", mime: "image/png", url: "data:image/png;base64,iVBORw0KGgo=" });
+    await writeFile(file, JSON.stringify(exported));
+    const manager = new HandoffManager(undefined, undefined, undefined, history);
+    const source = await manager.importFile(file);
+    assert(source.context);
+    const scan = await manager.scanAttachments(source.attachmentSession!);
+    assert.equal(scan.complete, true);
+    assert.equal(scan.entries.length, 1);
+    assert.equal(scan.entries[0].status, "ready");
+    const preview = manager.prepare("继续查看图片", "Codex", { includeTranscript: true, includeWorkspace: false, packAttachments: true, attachmentIds: [scan.entries[0].id], attachmentScanToken: scan.token });
+    assert.equal(preview.attachments?.entries.length, 1);
+    await assert.rejects(manager.copy(preview.token, async () => {}), /先导出/);
+    const result = await manager.exportPackage(preview.token, async () => root);
+    assert(result);
+    assert(result.path.endsWith(".zip"));
+    assert.match(result.preview.content, /已导出的本地附件包/);
+    assert.match(result.preview.content, /仅粘贴这段文字不会上传附件/);
+    await manager.exportContext(source.context.id, async () => root);
+    const conversation = manager.prepare("只讨论图片", "Codex", { includeTranscript: true, includeWorkspace: false, taskScope: "conversation", packAttachments: true, attachmentIds: [scan.entries[0].id], attachmentScanToken: scan.token });
+    assert.match(conversation.content, /读取目录需要另行授权/);
+    assert.match(conversation.content, /由用户在目标工具中主动选择附件/);
+    assert.doesNotMatch(conversation.content, /请先解压|请从上述导出目录读取|按分块读取/);
+
+  } finally { history.close(); await rm(root, { recursive: true, force: true }); }
 });

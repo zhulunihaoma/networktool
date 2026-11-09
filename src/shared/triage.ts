@@ -1,5 +1,6 @@
 import { AI_PLATFORMS } from "./platforms";
 import type { TriageRun, TriageAction, AIPlatform, TriageStep } from "./types";
+import { ipv6RepairText } from "./ip-path";
 
 // Codex uses this public entrance only as a connectivity reference. It is not a model/API health check.
 export const TRIAGE_TARGETS: AIPlatform[] = [
@@ -22,6 +23,8 @@ export const TRIAGE_ACTIONS: Record<TriageAction, string> = {
   reset_probe: "重建检测连接",
   observe: "观察重连（60 秒）",
   copy_report: "复制排查结果给 IT",
+  copy_ipv6_plan: "复制 IPv6 修复与恢复方案",
+  copy_ipv6_restore: "复制原 IPv6 恢复命令",
 };
 export function newTriage(targetId: string, id = "initial"): TriageRun {
   const steps: TriageStep[] = [
@@ -112,6 +115,8 @@ export function triageText(run: TriageRun): string {
         `${s.title} [${s.status}]：${s.summary}\n证据：${s.evidence.join("；") || "未取得"}\n建议：${s.suggestion || "等待检查"}`,
     ),
     run.comparison ? `复测比较：${run.comparison}` : "",
+    ...(run.ipPath?.repair ? [ipv6RepairText(run.ipPath.repair)] : []),
+    ...(run.ipv6Recovery ? [`先前记录的恢复命令：${run.ipv6Recovery.restoreCommand}`] : []),
     `用户复测：${run.verification === "restored" ? "用户确认已恢复" : run.verification === "still_failed" ? "用户确认仍有问题" : "用户尚未确认"}`,
     `观察：${run.observation.samples} 次快照；标记 ${run.observation.markers.length} 次；网络变化 ${run.observation.networkChanges} 次；代理路径变化 ${run.observation.proxyChanges} 次；采集错误 ${run.observation.errors} 次。`,
     ...run.observation.markers.map(

@@ -107,22 +107,22 @@ try {
     if (live) continue;
     await page.getByRole('button', { name: '刷新', exact: true }).click();
     await expect(cards).toHaveCount(1);
-    await cards.getByRole('button', { name: '接力', exact: true }).click();
+    await cards.getByRole('button', { name: '接续', exact: true }).click();
     const dialog = page.getByRole('dialog');
-    await expect(dialog.getByRole('button', { name: '生成接力预览' })).toBeEnabled();
+    await expect(dialog.getByRole('button', { name: '生成接续预览' })).toBeEnabled();
     await dialog.getByRole('button', { name: 'Codex', exact: true }).click();
     await dialog.getByRole('textbox', { name: '本次继续做什么' }).fill('读取历史中的起点并加 5，只回复计算结果。');
-    await dialog.getByRole('button', { name: '生成接力预览' }).click();
+    await dialog.getByRole('button', { name: '生成接续预览' }).click();
     const prompt = await dialog.locator('.handoff-prompt').innerText();
     assert(prompt.includes('RELAY_MARKER') && prompt.includes('37'));
     for (const excluded of ['fixture-private', 'PRIVATE_REASONING', 'PRIVATE_TOOL', 'STREAM_DUPLICATE', 'TRUNCATED_SUMMARY']) assert(!prompt.includes(excluded), `${source} leaked ${excluded}`);
     await dialog.getByRole('checkbox', { name: /原任务已停止/ }).check();
     await dialog.getByRole('checkbox', { name: /已确认目标工具/ }).check();
     await dialog.getByRole('checkbox', { name: /已检查全文/ }).check();
-    await dialog.getByRole('button', { name: '确认并复制接力内容', exact: true }).click();
+    await dialog.getByRole('button', { name: '确认并复制接续内容', exact: true }).click();
     await expect(dialog).toContainText('已复制，接下来粘贴到 Codex');
     assert.equal(await app.evaluate(async ({ clipboard }) => clipboard.readText()), prompt);
-    await dialog.getByRole('button', { name: '关闭接力弹窗' }).click();
+    await dialog.getByRole('button', { name: '关闭接续弹窗' }).click();
   }
   if (!live) {
     for (const [file, original] of sources) assert.equal(await fs.readFile(file, 'utf8'), original, 'source changed');

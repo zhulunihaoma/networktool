@@ -12,6 +12,7 @@ export type HistoryState =
   "complete" | "partial" | "unavailable" | "not-checked";
 export interface HistoryCoverage {
   indexedAt: number;
+  verifiedAt?: number;
   projects: HistoryState;
   sessions: HistoryState;
   context: HistoryState;
@@ -44,6 +45,8 @@ export interface ContextExport {
   warnings: string[];
 }
 export interface HistoryVerification {
+  revision?: string;
+  cancelled?: boolean;
   source: HandoffSource;
   checked: number;
   total: number;

@@ -98,11 +98,11 @@ export default function HandoffAttachments({
     scan,
   ]);
   return (
-    <section className="handoff-attachments" aria-label="附件接力">
+    <section className="handoff-attachments" aria-label="附件接续">
       <div className="handoff-attachments-heading">
         <div>
           <h3>
-            <Paperclip size={17} /> 附件接力 <span>可选</span>
+            <Paperclip size={17} /> 附件接续 <span>可选</span>
           </h3>
         </div>
         <div className="handoff-actions">
@@ -312,7 +312,7 @@ export default function HandoffAttachments({
                   <span>
                     我了解存在无法恢复或未确认的附件，仅导出本次选择的可用部分。
                     <small>
-                      缺失说明会保留在交接包中，不会标记为完整接力。
+                      缺失说明会保留在交接包中，不会标记为完整接续。
                     </small>
                   </span>
                 </label>

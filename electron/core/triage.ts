@@ -10,6 +10,7 @@ import type {
   TriageStep,
 } from "../../src/shared/types";
 import { detectRunningApps } from "./platforms";
+import { ipPathEvidence, ipPathSummary, ipv6PathMismatch, type IPPathReport } from "../../src/shared/ip-path";
 
 export interface TriageDependencies {
   network(): Promise<{ count: number; signature: string }>;
@@ -17,6 +18,7 @@ export interface TriageDependencies {
   proxyEndpoint(proxy: string, signal: AbortSignal): Promise<string[]>;
   dns(host: string, signal: AbortSignal): Promise<{ v4: number; v6: number }>;
   probe(target: AIPlatform, signal: AbortSignal): Promise<PlatformResult>;
+  ipPath?(host: string, signal: AbortSignal): Promise<IPPathReport>;
   processes(): Promise<ProcessInfo[]>;
   connections(
     processes: ProcessInfo[],
@@ -156,6 +158,7 @@ export class TriageDoctor {
     previous?: TriageRun,
   ) {
     let noNetwork = false;
+    let systemProxyDirect = false;
     await this.step("network", signal, async () => {
       const network = await this.d.network();
       noNetwork = network.count === 0;
@@ -186,6 +189,7 @@ export class TriageDoctor {
       await this.step("proxy", signal, async () => {
         const routes = await this.d.proxy(target.url);
         const first = routes.split(";")[0].trim();
+        systemProxyDirect = first === "DIRECT";
         if (first === "DIRECT")
           return {
             status: "unverified",
@@ -266,6 +270,19 @@ export class TriageDoctor {
       });
       await this.step("entry", signal, async () => {
         const result = await this.d.probe(target, signal);
+        if (this.d.ipPath && !signal.aborted) {
+          const report = await this.d.ipPath(target.id === "codex" ? "codex-cloud-backend.chatgpt.com" : new URL(target.url).hostname, signal);
+          if (signal.aborted) return {};
+          if (!systemProxyDirect) report.repair = undefined;
+          this.run.ipPath = report;
+          const recovery = previous?.ipv6Recovery || previous?.ipPath?.repair;
+          if (recovery && report.service?.id === recovery.service.id && report.service.method === "LinkLocal")
+            this.run.ipv6Recovery = recovery;
+        }
+        const ipPath = this.run.ipPath;
+        const mismatch = ipPath && ipv6PathMismatch(ipPath);
+        const ipPathProblem = ipPath && (mismatch || ipPath.networkChanged ||
+          (!ipPath.unavailable && !ipPath.dnsError && ipPath.attempts.length > 0 && ipPath.attempts.every((a) => !a.tls)));
         const systemFailed = result.paths?.some(
           (p) => p.label === "系统路径" && p.status === "unreachable",
         );
@@ -293,16 +310,16 @@ export class TriageDoctor {
           status:
             result.status === "check_failed"
               ? "error"
-              : healthy
+              : healthy && !ipPathProblem
                 ? "pass"
                 : "attention",
-          summary: result.summary,
-          evidence: result.evidence.map(
+          summary: ipPathProblem ? ipPathSummary(ipPath!) : result.summary,
+          evidence: [...result.evidence.map(
             (e) =>
               `${e.source === "Chromium · system network" ? "系统路径" : e.route === "direct" ? "补充直连" : "补充代理"} · ${e.stage.toUpperCase()}：${e.status}${e.httpStatus ? ` HTTP ${e.httpStatus}` : ""}${e.code ? ` ${e.code}` : ""}`,
-          ),
-          suggestion: `${result.suggestion}${target.id === "codex" ? " 此处仅测 ChatGPT 公开入口，不证明 Codex 模型、认证或任务连接正常。" : ""}`,
-          actions,
+          ), ...(ipPath ? ipPathEvidence(ipPath) : [])],
+          suggestion: `${result.suggestion}${target.id === "codex" ? " 公开入口与补充 Codex 服务探测不证明模型、认证或任务连接正常。" : ""}${ipPath ? ` ${ipPathSummary(ipPath)}` : ""}`,
+          actions: [...actions, ...(ipPath?.repair ? ["copy_ipv6_plan" as const] : []), ...(this.run.ipv6Recovery ? ["copy_ipv6_restore" as const] : [])],
           support: result.status === "check_failed" ? "none" : "limited",
         };
       });
@@ -321,13 +338,17 @@ export class TriageDoctor {
     this.run.ended = Date.now();
     prioritize(this.run);
     if (previous) {
+      const changedNetwork = previous.ipPath && this.run.ipPath &&
+        (previous.ipPath.accessNetworkKey || previous.ipPath.networkKey) !== (this.run.ipPath.accessNetworkKey || this.run.ipPath.networkKey);
       const before = previous.steps
         .filter((s) => ["attention", "error"].includes(s.status))
         .map((s) => s.id);
       const fixed = before.filter(
         (id) => this.run.steps.find((s) => s.id === id)?.status === "pass",
       );
-      this.run.comparison = fixed.length
+      this.run.comparison = changedNetwork
+        ? "两次检查的网络接口或地址不同，不能把恢复归因于修复操作；请确认仍在故障热点后复测。"
+        : fixed.length
         ? `${fixed.length} 项先前异常现已通过本次检查；请在原工具确认是否恢复。`
         : "本次没有证明先前异常已恢复；入口结果不等于应用修复结果。";
     }

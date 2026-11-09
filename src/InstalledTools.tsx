@@ -68,6 +68,7 @@ export default function InstalledTools({
     setBusy(true);
     try {
       setInventory(await api.discoverTools());
+      onError("");
     } catch (error) {
       onError((error as Error).message);
     } finally {
@@ -126,6 +127,7 @@ export default function InstalledTools({
     setChecking(true);
     try {
       setInventory(await api.checkToolUpdates(id));
+      onError("");
     } catch (error) {
       onError((error as Error).message);
     } finally {
@@ -249,6 +251,7 @@ export default function InstalledTools({
                 onClick={async () => {
                   try {
                     setInventory(await api.pinTool(tool.id, !tool.pinned));
+      onError("");
                   } catch (error) {
                     onError((error as Error).message);
                   }

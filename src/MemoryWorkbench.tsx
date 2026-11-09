@@ -691,7 +691,7 @@ export default function MemoryWorkbench({ api }: { api: DesktopAPI }) {
                       className="memory-source-link"
                       onClick={locateSource}
                     >
-                      {selectedFile.pathLabel} ↗
+                      定位来源文件：{selectedFile.pathLabel}
                     </button>
                     <small>
                       原文第 {range(selectedNode)} 行 · 点击定位左侧文件

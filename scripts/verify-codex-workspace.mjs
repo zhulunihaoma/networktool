@@ -87,18 +87,18 @@ try {
     assert(transcript.includes('OFFICIAL_HISTORY_MARKER'));
     assert(!transcript.includes('fixture-private') && !transcript.includes('PRIVATE_REASONING'));
   }
-  await dialog.getByRole('button', { name: '接力此会话' }).click();
+  await dialog.getByRole('button', { name: '接续此会话' }).click();
   if (!live) { await dialog.getByRole('button', { name: 'Claude Code', exact: true }).click(); await dialog.getByRole('textbox', {name:'本次继续做什么'}).fill('按历史中记录的起点和待办完成加法，不调用工具或访问文件，只回复 HANDOFF_OK:<结果>。'); }
-  await dialog.getByRole('button', { name: '生成接力预览' }).click();
+  await dialog.getByRole('button', { name: '生成接续预览' }).click();
   await expect(dialog.locator('.handoff-prompt')).toBeVisible();
   const prompt = await dialog.locator('.handoff-prompt').innerText();
   assert(prompt.includes(title));
   if (!live) assert(prompt.includes('OFFICIAL_HISTORY_MARKER'));
   await page.screenshot({ path: path.join(temporary, 'codex-preview.png') });
   if (!live) {
-    await expect(dialog.getByRole('button',{name:'确认并复制接力内容'})).toBeDisabled();
+    await expect(dialog.getByRole('button',{name:'确认并复制接续内容'})).toBeDisabled();
     for (const check of await dialog.locator('.handoff-confirmations input').all()) await check.check();
-    await dialog.getByRole('button',{name:'确认并复制接力内容'}).click();
+    await dialog.getByRole('button',{name:'确认并复制接续内容'}).click();
     await expect(dialog.getByRole('status')).toContainText('已复制，接下来粘贴到 Claude Code');
     const copied = await app.evaluate(({clipboard}) => clipboard.readText());
     assert.equal(copied, prompt);
@@ -114,7 +114,7 @@ try {
     }
   }
 
-  await dialog.getByRole('button', { name: '关闭接力弹窗' }).click();
+  await dialog.getByRole('button', { name: '关闭接续弹窗' }).click();
   if (!live) {
     await page.getByRole('navigation', { name: '项目分类' }).getByRole('button').filter({ hasText: '已登记空项目' }).click();
     await expect(page.locator('.handoff-conversations')).toContainText('这个项目还没有可读取的聊天');
@@ -135,9 +135,9 @@ try {
     await page.getByRole('button', { name: '刷新', exact: true }).click();
     await expect(page.locator('.handoff-origin > span')).toContainText('兼容读取', { timeout: 30000 });
     await expect(page.locator('.handoff-task')).toHaveCount(1);
-    await page.getByRole('button', { name: '接力', exact: true }).click();
+    await page.getByRole('button', { name: '接续', exact: true }).click();
     await expect(dialog.getByRole('alert')).toContainText('分页历史');
-    await expect(dialog.getByRole('button', { name: '生成接力预览' })).toBeDisabled();
+    await expect(dialog.getByRole('button', { name: '生成接续预览' })).toBeDisabled();
     for (const [file, content] of fixtures) assert.equal(await fs.readFile(file, 'utf8'), content);
     assert.deepEqual(JSON.parse(await fs.readFile(globalFile, 'utf8')), globalState);
   }

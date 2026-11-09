@@ -240,6 +240,7 @@ export default function SkillCenter({
       const next = await api.skills();
       setScan(next);
       setFailure(undefined);
+      onError("");
       setResult(undefined);
       setResultRows([]);
       setCopyTarget("");
@@ -383,6 +384,7 @@ export default function SkillCenter({
       const row = await api.restoreSkill(id);
       setScan(await api.skills());
       setDeleteResults([]);
+      onError("");
       setRestoreMessage(`已恢复 ${row.name} 到 ${row.originalPath}`);
     } catch (error) { onError((error as Error).message); }
     finally { operation.current = false; setBusy(false); }
@@ -414,6 +416,7 @@ export default function SkillCenter({
         `已复制 ${copied}/${rows.length} 项${skipped ? `，${skipped} 项跳过` : ""}${failed ? `，${failed} 项失败` : ""}`,
       );
       setResultRows(rows);
+      onError("");
       setCopyTarget(target);
       setCopyToastVisible(true);
       setCopyDetailsOpen(false);
@@ -484,7 +487,7 @@ export default function SkillCenter({
               onClick={selectAll}
               disabled={busy || !filtered.length}
             >
-              {allVisibleSelected ? "清空选择" : "全选当前结果"}
+              {allVisibleSelected ? "取消当前结果选择" : "全选当前结果"}
             </button>
             <button
               className="primary"
@@ -495,7 +498,7 @@ export default function SkillCenter({
               disabled={busy || !selected.length}
             >
               <ClipboardCheck size={15} />
-              复制（{selected.length}）
+              复制（{selected.length}）{selected.some(id => !filtered.some(item => item.id === id)) && <small> · 含筛选外 {selected.filter(id => !filtered.some(item => item.id === id)).length} 项</small>}
             </button>
             <button className="skill-batch-delete" type="button" disabled={busy || !selectedDeletableCount} onClick={() => openDelete(selected)}>
               <Trash2 size={15} />
