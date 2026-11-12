@@ -19,13 +19,13 @@
 
 以下以未来的 `0.4.0` 为例，先确定版本号并更新 `package.json` 与锁文件，再构建，不能复用旧版本安装包。
 
-1. `npm ci && npm test`，macOS 运行 `npm run package`；Windows 运行 `npm run package:win`。macOS 现在同时生成 `.app` 目录和可下载 ZIP。需要分别构建各架构并确认运行；清单中只填写真正构建并验收的平台。
+1. `npm ci && npm test`，macOS 运行 `npm run package`；Windows 运行 `npm run package:win`。macOS 同时生成 `360AI盒子.app`、DMG 和可下载 ZIP，产物名称使用 `360AI盒子-<版本>-<系统>-<架构>.<扩展名>`。需要分别构建各架构并确认运行；清单中只填写真正构建并验收的平台。
 2. 收集安装包、编写纯文本更新说明，用以下命令生成清单（路径替换为实际文件）：
 
    ```sh
    npm run release:manifest -- --version 0.4.0 \
-     --asset win32-x64 "release/Network-Lens-0.4.0-win-x64.exe" \
-     --asset darwin-arm64 "release/Network-Lens-0.4.0-mac-arm64.zip" \
+     --asset win32-x64 "release/360AI盒子-0.4.0-win-x64.exe" \
+     --asset darwin-arm64 "release/360AI盒子-0.4.0-mac-arm64.zip" \
      --notes release/notes.txt
    ```
 

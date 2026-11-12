@@ -239,7 +239,7 @@ async function tlsHttp(
       async () => {
         const response = readUntil(secure, headerLength, signal);
         secure.write(
-          `${method} ${probePath} HTTP/1.1\r\nHost: ${host}\r\nUser-Agent: NetworkLens/0.1\r\nConnection: close\r\n\r\n`,
+          `${method} ${probePath} HTTP/1.1\r\nHost: ${host}\r\nUser-Agent: 360AI-Box/0.1\r\nConnection: close\r\n\r\n`,
         );
         const header = (await response).toString("latin1");
         const code = Number(header.match(/^HTTP\/1\.[01] (\d{3})/)?.[1]);

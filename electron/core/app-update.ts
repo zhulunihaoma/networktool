@@ -22,7 +22,7 @@ const assetSchema = z
       .string()
       .min(1)
       .max(180)
-      .regex(/^[\w ()+.-]+$/)
+      .regex(/^[\w\p{Script=Han} ()+.-]+$/u)
       .refine(
         (name) =>
           !name.startsWith(".") &&
@@ -180,7 +180,7 @@ export class AppUpdater {
         cache: "no-store",
         headers: {
           Accept: "application/octet-stream, application/json",
-          "User-Agent": "Network-Lens-Updater",
+          "User-Agent": "360AI-Box-Updater",
         },
       });
       if ([301, 302, 303, 307, 308].includes(response.status)) {

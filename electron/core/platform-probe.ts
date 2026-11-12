@@ -29,7 +29,7 @@ export async function probePlatform(platform: AIPlatform, parent: AbortSignal, o
         redirect: "manual",
         cache: "no-store",
         signal: AbortSignal.any([abort.signal, AbortSignal.timeout(8000)]),
-        headers: { "User-Agent": "NetworkLens/0.2 NetworkCheck" },
+        headers: { "User-Agent": "360AI-Box/0.2 NetworkCheck" },
       });
       const status = response.status;
       evidence.push({

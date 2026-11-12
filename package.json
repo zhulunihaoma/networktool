@@ -1,12 +1,12 @@
 {
-  "name": "network-lens",
+  "name": "360ai-box",
   "version": "0.3.0",
   "private": true,
   "engines": {
     "node": ">=22.12.0"
   },
-  "description": "Evidence-first desktop network diagnostics",
-  "author": "Network Lens contributors",
+  "description": "360AI盒子 · AI 工具安全与效率助手",
+  "author": "360AI盒子 contributors",
   "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "node scripts/dev.mjs",
@@ -14,7 +14,7 @@
     "start": "node scripts/build.mjs && electron .",
     "preview": "vite --host 127.0.0.1",
     "test": "tsx --test tests/*.test.ts",
-    "package": "npm run build && electron-builder --mac dir zip",
+    "package": "npm run build && electron-builder --mac dmg zip",
     "release:manifest": "node scripts/create-update-manifest.mjs",
     "package:win": "npm run build && electron-builder --win nsis --x64"
   },
@@ -43,8 +43,9 @@
   },
   "build": {
     "appId": "dev.networklens.desktop",
-    "productName": "Network Lens",
-    "artifactName": "Network-Lens-${version}-${os}-${arch}.${ext}",
+    "productName": "360AI盒子",
+    "artifactName": "360AI盒子-${version}-${os}-${arch}.${ext}",
+    "icon": "src/assets/brand-mark.svg",
     "directories": {
       "output": "release"
     },

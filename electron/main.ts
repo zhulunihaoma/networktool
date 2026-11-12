@@ -757,7 +757,7 @@ app
         throw new Error("审计或提醒已更新，请重新预览报告。");
       const result = await dialog.showSaveDialog(win!, {
         title: "保存脱敏文件审计报告",
-        defaultPath: `network-lens-file-audit.${report.format}`,
+        defaultPath: `360AI盒子-file-audit.${report.format}`,
         filters: [
           {
             name: report.format === "md" ? "Markdown 报告" : "JSON 证据包",
@@ -982,7 +982,7 @@ app
         throw new Error("会话已更新，请重新预览报告。");
       const result = await dialog.showSaveDialog(win!, {
         title: "保存诊断报告",
-        defaultPath: `network-lens-${new Date(s.started).toISOString().slice(0, 10)}.${report.format}`,
+        defaultPath: `360AI盒子-${new Date(s.started).toISOString().slice(0, 10)}.${report.format}`,
         filters: [
           {
             name: report.format === "md" ? "Markdown 报告" : "JSON 证据包",

@@ -34,7 +34,7 @@ export async function createUpdateManifest({
         ? [".zip", ".dmg"]
         : [".AppImage", ".deb", ".rpm", ".tar.gz"];
     if (
-      !/^[\w ()+.-]{1,180}$/.test(name) ||
+      !/^[\w\p{Script=Han} ()+.-]{1,180}$/u.test(name) ||
       name.startsWith(".") ||
       !extensions.some((ext) => name.endsWith(ext)) ||
       names.has(name)

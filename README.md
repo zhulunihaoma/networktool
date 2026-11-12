@@ -1,4 +1,4 @@
-# Network Lens 桌面网络诊断助手
+# 360AI盒子 · AI 工具安全与效率助手
 
 应用自身支持 Gitee / GitHub 双源检查与下载，入口为「偏好设置 → 应用更新」；自动模式优先 Gitee 下载，失败后切换 GitHub，校验后手动安装。发布清单生成、附件同步及验收步骤见 [双源应用更新](docs/APP-UPDATES.md)。
 
@@ -6,7 +6,7 @@
 
 本机发现已扩展至 21 类工具，支持未运行应用、改名应用、应用链接、常见 CLI 与 NVM/fnm 安装位置；桌面、CLI 和 Agent 扩展版本分别展示。点击“检查更新”查询公开发布源，查看本机/发布版本、渠道、时间与更新提示；未知来源和查询失败不会显示成最新。实机范围与限制见 [工具识别与更新验收](docs/validation/TOOL-DISCOVERY-VALIDATION.md)。
 
-新增“文件策略与审计”：先选择项目或目录，只枚举元数据；确认候选后分别设置读取、修改、发送模型策略，支持指定文件、版本冲突保护、自检记录、提醒确认和脱敏报告预览/保存。**当前仅实现助手自己的策略校验与记录，不采集第三方 AI 工具访问，也不能阻止其文件访问。** 专用自动修复、受控文件网关、隔离启动、OS 审计与系统阻断尚未实现，文档完整验收仍未达成。逐项范围见 [补充实现与验收](docs/validation/ASSISTANT-VALIDATION.md)。已有 release 安装包仍是此前构建，使用源码构建运行查看本轮功能。
+新增“文件策略与审计”：先选择项目或目录，只枚举元数据；确认候选后分别设置读取、修改、发送模型策略，支持指定文件、版本冲突保护、自检记录、提醒确认和脱敏报告预览/保存。**当前仅实现助手自己的策略校验与记录，不采集第三方 AI 工具访问，也不能阻止其文件访问。** 专用自动修复、受控文件网关、隔离启动、OS 审计与系统阻断尚未实现，文档完整验收仍未达成。逐项范围见 [补充实现与验收](docs/validation/ASSISTANT-VALIDATION.md)。当前 macOS 安装包的位置见下方“打开程序”；历史安装包不代表当前源码功能。
 
 默认覆盖：豆包、DeepSeek、Kimi、腾讯元宝、千问、WPS AI、飞书 AI、ChatGPT、Claude、Gemini、Microsoft Copilot、Perplexity、Notion AI、Cursor。按“国内 / 海外 / 需要关注 / 正在运行”筛选，支持名称搜索。
 
@@ -14,9 +14,9 @@
 
 ## 打开程序
 
-本机生成的 Apple Silicon 应用：`release/mac-arm64/Network Lens.app`。可在 Finder 中双击，或复制到应用程序目录。此构建没有开发者签名和公证，用于本机开发验收，尚不是签名发布版本。
+macOS 打包后的 Apple Silicon 应用：`release/mac-arm64/360AI盒子.app`，安装包为 `release/360AI盒子-0.3.0-mac-arm64.dmg`，同时提供同名 ZIP。本轮构建使用独立目录 `release/build-20261112-360ai-arm64/`，其中包含 `mac-arm64/360AI盒子.app`、DMG、ZIP 与构建验证记录。打开 DMG 后将应用拖入 Applications，或将 `.app` 复制到应用程序目录。此构建没有开发者签名和公证，用于本机开发验收，尚不是签名发布版本。
 
-便于复制的 macOS 压缩包：`release/Network-Lens-macOS-arm64.zip`；Windows x64 安装包：`release/Network Lens Setup 0.3.0.exe`。安装包未配置发布签名。顺序排查验收见 [0.3 记录](docs/validation/TRIAGE-VALIDATION.md)，文件校验值见 [0.3 checksums](checksums-0.3.0.txt)；普通用户版原验收见 [0.2 记录](docs/validation/OFFICE-VALIDATION.md)，专业版保留在 [0.1 记录](docs/validation/VALIDATION.md)。
+Windows 安装包需在对应平台按下方命令重新生成；仓库保留的历史安装包和校验记录仍使用当时的文件名，不能作为本次源码的发布产物。历史顺序排查验收见 [0.3 记录](docs/validation/TRIAGE-VALIDATION.md)，历史文件校验值见 [0.3 checksums](checksums-0.3.0.txt)；普通用户版原验收见 [0.2 记录](docs/validation/OFFICE-VALIDATION.md)，专业版保留在 [0.1 记录](docs/validation/VALIDATION.md)。
 
 源码运行需要 Node.js 22.12 以上，建议 Node.js 24 LTS：
 
@@ -28,7 +28,7 @@ npm start
 
 开发模式：`npm run dev`。仅 UI 预览：`npm run preview`，浏览器访问 `http://127.0.0.1:5173/`，此时明确显示演示模式，不具备原生采集能力。桌面应用本身不开启本地 HTTP 服务。
 
-macOS 打包：`npm run package`。Windows x64 安装包：`npm run package:win`。跨平台生成安装包不代表已在该平台验证；Windows 采集仍需 Windows 11 实机验收。
+macOS 打包：`npm run package`，默认生成 DMG、ZIP 和 `.app`，应用图标与左上角 Logo 同源于 `src/assets/brand-mark.svg`。Windows x64 安装包：`npm run package:win`。跨平台生成安装包不代表已在该平台验证；Windows 采集仍需 Windows 11 实机验收。
 
 ## 普通用户使用流程
 
@@ -77,7 +77,7 @@ VPN、地区策略、分流 DNS 和本机代理端口的人工排查请见 [VPN 
 
 采集每秒一次，单会话上限 2,000 条连接观察，截断会累加丢失计数。只允许一个活动会话，每主机每分钟最多 6 次连接尝试，主动探测整体预算 30 秒。进程退出不自动加入同名新实例。基线与任务时长、快照覆盖和 CDN 地址变化都会限制对比结论。
 
-数据库默认保存 7 天，可选择 1 / 7 / 30 天，目录位于 Electron 的本机用户数据目录（macOS：`~/Library/Application Support/Network Lens/diagnostics.sqlite`）。逻辑删除不承诺 SSD 物理安全擦除。数据库没有完整加密，不存模型密钥或应用认证头。
+数据库默认保存 7 天，可选择 1 / 7 / 30 天，目录位于 Electron 的本机用户数据目录（macOS：`~/Library/Application Support/360AI盒子/diagnostics.sqlite`）。逻辑删除不承诺 SSD 物理安全擦除。数据库没有完整加密，不存模型密钥或应用认证头。
 
 ## 源码结构
 
