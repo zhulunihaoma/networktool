@@ -91,10 +91,12 @@ export function classifyProvider(
       result.status = "busy";
       result.summary =
         n === 429
-          ? `${prefix}网络可达，服务限制请求频率`
+          ? `${prefix}网络可达，服务返回限流（HTTP 429）`
           : `${prefix}网络可达，服务返回异常（HTTP ${n}）`;
       result.suggestion =
-        "稍后再试，并查看官方服务状态页；这不能证明平台全球故障。";
+        n === 429
+          ? "HTTP 429 属于服务端限流：可能是请求频率限制、配额用尽或风控拦截。无凭据探测无法区分这三种情况，请在原工具查看具体额度与风控提示；这不是本机网络故障。"
+          : "稍后再试，并查看官方服务状态页；这不能证明平台全球故障。";
     } else if (endpoint.expectAnon.includes(n)) {
       // 401 / 405 / 404 / 400 in expectAnon all mean the request reached the
       // service without valid credentials; the network path is therefore OK.

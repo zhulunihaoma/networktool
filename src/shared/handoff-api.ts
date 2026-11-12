@@ -46,6 +46,7 @@ export interface HandoffTool {
   historyFound: boolean;
   readable: boolean;
   detail: string;
+  sessionCount?: number;
 }
 export interface SourceTask {
   id: string;
@@ -67,6 +68,7 @@ export interface SourceProject {
   count?: number;
   nativeIds?: string[];
   instance?: string;
+  order?: number;
 }
 export interface SourceTaskQuery {
   projectId?: string;

@@ -1,0 +1,446 @@
+/* 360AI 盒子视觉基线：品牌绿用于操作，风险色保留独立语义。 */
+:root {
+  --brand: #168c68;
+  --brand-hover: #087656;
+  --brand-soft: #eaf7f0;
+  --blue: var(--brand);
+  --green: var(--brand);
+  --line: #e3ebe7;
+  --muted: #72827d;
+  --shadow: 0 2px 12px #173f2d08;
+  color: #263a34;
+  background: #f5f8f6;
+}
+.sidebar {
+  background: #fff;
+  border-color: #e6eeea;
+}
+.brand {
+  color: #233a32;
+  letter-spacing: -0.3px;
+}
+.brand small {
+  color: #75877e;
+  letter-spacing: 0.3px;
+  font-size: 11px;
+}
+.sidebar-label {
+  color: #82928a;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+}
+.nav-item {
+  color: #63766c;
+  font-size: 14px;
+  border-radius: 9px;
+  transition:
+    background 0.16s,
+    color 0.16s;
+}
+.nav-item svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.8;
+}
+.nav-item:hover {
+  background: #f2f8f4;
+  color: #28785d;
+}
+.nav-item.active {
+  background: #e8f6ee;
+  color: #128460;
+  font-weight: 600;
+}
+.local-card {
+  background: #f4faf6;
+  border-color: #dfefe5;
+  color: #267d5e;
+  font-size: 12px;
+}
+.local-card small {
+  color: #718b7c;
+  font-size: 11px;
+}
+.sidebar-foot {
+  color: #8c9b93;
+  font-size: 10px;
+}
+.main-shell {
+  background: #f5f8f6;
+}
+.topbar {
+  background: #fff;
+  border-color: var(--line);
+  color: #778b80;
+}
+.page-heading h1 {
+  color: #223b31;
+  letter-spacing: -0.4px;
+}
+.page-heading p {
+  color: #71847a;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.panel {
+  border-color: var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.primary,
+.handoff-relay {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+  box-shadow: 0 3px 8px #168c681c;
+}
+.primary:hover:not(:disabled),
+.handoff-task:hover .handoff-relay,
+.handoff-task:focus-within .handoff-relay {
+  background: var(--brand-hover);
+  border-color: var(--brand-hover);
+}
+.secondary:hover:not(:disabled) {
+  color: var(--brand-hover);
+  background: #f2faf5;
+  border-color: #a9d8bd;
+}
+.secondary.selected,
+.segmented button.active {
+  color: var(--brand-hover);
+  background: var(--brand-soft);
+  border-color: #a9d8bd;
+}
+.text-button,
+.security-center .link-button {
+  color: var(--brand);
+}
+.text-button:hover,
+.security-center .link-button:hover {
+  color: var(--brand-hover);
+}
+:where(button, input, textarea, select, summary):focus-visible {
+  outline: 2px solid #23a97d;
+  outline-offset: 2px;
+}
+:where(input, textarea, select) {
+  accent-color: var(--brand);
+}
+.security-center .security-tabs,
+.handoff-tool-tabs {
+  gap: 4px;
+  border-color: var(--line);
+}
+.security-tabs button,
+.handoff-tool-tabs button {
+  color: #6c8075;
+  font-size: 14px;
+  font-weight: 500;
+}
+.security-tabs button:hover,
+.handoff-tool-tabs button:hover {
+  color: var(--brand-hover);
+  background: #f1f8f3;
+}
+.security-tabs button.active,
+.handoff-tool-tabs button.active {
+  color: var(--brand);
+  border-bottom-color: var(--brand);
+  font-weight: 600;
+}
+.security-center .security-card,
+.handoff-task {
+  border-color: var(--line);
+  border-radius: 10px;
+}
+.security-center .security-card:hover,
+.handoff-task:hover,
+.handoff-task:focus-within {
+  border-color: #a9d7bb;
+  box-shadow: 0 4px 16px #167b5510;
+}
+.handoff-tool-tabs button.active .handoff-tool-count,
+.skill-step.active > span {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+.handoff-tool-count,
+.handoff-badge,
+.handoff-projects button.active,
+.handoff-targets button.active {
+  color: var(--brand-hover);
+  background: var(--brand-soft);
+  border-color: #c6e8d2;
+}
+.skill-step.active,
+.skill-step.done {
+  color: var(--brand);
+}
+.skill-step.done > span {
+  color: var(--brand);
+  border-color: #a9d8bd;
+  background: var(--brand-soft);
+}
+.skill-toolbar .segmented button.active {
+  color: var(--brand-hover);
+  background: var(--brand-soft);
+}
+.handoff-search:focus-within,
+.search-field input:focus {
+  border-color: #63bd8f;
+  outline: 0;
+  box-shadow: 0 0 0 3px #168c6818;
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-item {
+    transition: none;
+  }
+}
+
+/* 统一导航、标题、选项卡与主要工作区的密度。 */
+.sidebar {
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.sidebar nav {
+  flex-shrink: 0;
+}
+.nav-advanced {
+  margin-top: 12px;
+}
+.nav-advanced summary {
+  min-height: 44px;
+  padding: 10px 14px;
+  color: #71847a;
+  font-size: 13px;
+  border-radius: 9px;
+}
+.nav-advanced summary:hover {
+  background: #f2f8f4;
+  color: var(--brand-hover);
+}
+.nav-advanced[open] summary svg {
+  transform: rotate(180deg);
+}
+.sidebar-bottom {
+  padding-top: 20px;
+}
+.local-card {
+  margin-bottom: 14px;
+  line-height: 1.4;
+}
+.local-card small {
+  line-height: 1.4;
+}
+.sidebar-foot {
+  margin-top: 16px;
+}
+.security-center,
+.handoff-page,
+.skill-center {
+  max-width: 1380px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.security-center .page-heading,
+.handoff-page .page-heading,
+.skill-center .page-heading {
+  margin-bottom: 24px;
+  align-items: flex-start;
+}
+.security-center .page-heading h1,
+.handoff-page .page-heading h1,
+.skill-center .page-heading h1 {
+  font-size: 26px;
+  line-height: 1.25;
+}
+.security-center .page-heading p,
+.handoff-page .page-heading p,
+.skill-center .page-heading p {
+  margin-top: 8px;
+  color: #71847a;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.security-center .security-tabs,
+.handoff-tool-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #c7dad0 transparent;
+}
+.security-center .security-tabs button,
+.handoff-tool-tabs button {
+  flex: 0 0 auto;
+  border-radius: 6px 6px 0 0;
+}
+.security-center .security-tabs button {
+  padding: 12px 15px;
+}
+.handoff-tool-tabs {
+  gap: 18px;
+  margin-bottom: 22px;
+}
+.handoff-tool-tabs button {
+  padding: 12px 4px;
+}
+.handoff-tool-count {
+  box-shadow: none;
+  transform: none;
+  font-size: 11px;
+  height: 20px;
+}
+.handoff-tool-tabs button.active .handoff-tool-count {
+  box-shadow: none;
+}
+.handoff-quickstart {
+  margin-bottom: 18px;
+  border-color: var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.handoff-quickstart ol {
+  gap: 16px;
+  padding: 16px 20px;
+}
+.handoff-quickstart li {
+  gap: 10px;
+}
+.handoff-quickstart li > span {
+  width: 25px;
+  height: 25px;
+  font-size: 12px;
+  background: var(--brand);
+}
+.handoff-quickstart strong {
+  color: #263e33;
+  font-size: 13px;
+}
+.handoff-quickstart li p {
+  margin-top: 4px;
+  color: #71847a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.handoff-quickstart-tip {
+  padding: 10px 20px;
+  border-color: var(--line);
+  background: #f4faf6;
+  color: #3c7660;
+}
+.handoff-quickstart-tip p {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.handoff-quickstart-tip svg {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+.handoff-browser h2,
+.skill-list .section-heading h2 {
+  color: #263e33;
+  font-size: 16px;
+}
+.handoff-browser-head p,
+.skill-list .section-heading p {
+  color: #71847a;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.handoff-projects button {
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+.handoff-projects button:hover {
+  background: #f2f8f4;
+}
+.handoff-task-title,
+.skill-name strong {
+  color: #263e33;
+}
+.handoff-task-title:hover,
+.skill-name:hover strong {
+  color: var(--brand-hover);
+}
+.handoff-task-actions .handoff-read:hover {
+  color: var(--brand-hover);
+  background: var(--brand-soft);
+}
+.skill-steps {
+  margin-bottom: 16px;
+}
+.skill-list {
+  overflow: hidden;
+}
+.skill-list .section-heading {
+  gap: 16px;
+}
+.skill-toolbar {
+  background: #f8fbf9;
+}
+.skill-toolbar .segmented {
+  background: #eef4f0;
+}
+.skill-toolbar .segmented button {
+  color: #687c70;
+}
+.skill-toolbar .segmented button.drag-over {
+  box-shadow: inset 2px 0 0 var(--brand);
+}
+.skill-table-head {
+  background: #f6f9f7;
+}
+.skill-row {
+  transition: background 0.15s;
+}
+.skill-row:hover {
+  background: #f7fbf8;
+}
+.skill-row.selected {
+  background: #eef8f1;
+}
+.skill-row-copy {
+  color: var(--brand-hover);
+  border-color: #c6dfcf;
+}
+.skill-row-copy:hover:not(:disabled) {
+  color: var(--brand-hover);
+  background: var(--brand-soft);
+  border-color: #97cdaa;
+}
+@media (max-width: 1180px) {
+  .security-center .page-heading h1,
+  .handoff-page .page-heading h1,
+  .skill-center .page-heading h1 {
+    font-size: 24px;
+  }
+  .handoff-quickstart ol {
+    gap: 12px;
+  }
+  .skill-list .section-heading {
+    flex-wrap: wrap;
+  }
+}
+
+/* 所有来源和安全功能直接可见，窄窗口自然换行。 */
+.security-center .security-tabs,
+.handoff-tool-tabs {
+  flex-wrap: wrap;
+  overflow: visible;
+  row-gap: 0;
+}
+.handoff-tool-tabs {
+  column-gap: 16px;
+}
+.handoff-tool-tabs button {
+  padding: 9px 3px;
+}
+.handoff-tool-tabs strong {
+  font-size: 13px;
+}

@@ -78,6 +78,33 @@ export function createDemoAssistant(): AssistantAPI {
       return copy(inventory);
     },
     chooseToolPath: async () => copy(inventory),
+    trialFilePolicy: async () => {
+      throw new Error("请在桌面应用使用真实文件策略；网页演示不读取本机文件。");
+    },
+    publishFilePolicy: async () => {
+      throw new Error("演示模式不下发真实规则。");
+    },
+    rollbackFilePolicy: async () => {
+      throw new Error("演示模式没有真实发布历史。");
+    },
+    reconfirmFileCandidate: async () => {
+      throw new Error("演示模式不确认真实文件。");
+    },
+    reviewFileCandidate: async () => copy(workspace),
+    startFileTask: async () => {
+      throw new Error("请在桌面应用发起本地文件任务。");
+    },
+    grantFileTask: async () => {
+      throw new Error("演示模式不创建真实授权。");
+    },
+    runFileTask: async () => {
+      throw new Error("演示模式不执行真实文件访问。");
+    },
+    revokeFileGrant: async () => copy(workspace),
+    exportFileTaskCopy: async () => {
+      throw new Error("演示模式不保存本机副本。");
+    },
+    retryFileDeployment: async () => copy(workspace),
     fileWorkspace: async () => copy(workspace),
     chooseFileScope: async () => {
       if (!workspace.scopes.length) {
@@ -143,7 +170,7 @@ export function createDemoAssistant(): AssistantAPI {
       if (!scope?.candidates.some((c) => c.id === resourceId))
         throw new Error("示例文件不存在");
       const policy = scope.policies.find((p) => p.resourceId === resourceId),
-        decision = policy?.enabled ? policy[operation] : "ask";
+        decision = policy?.enabled ? policy[operation] || "deny" : "ask";
       const event = record({
         scopeId,
         resourceId,

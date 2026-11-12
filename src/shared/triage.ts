@@ -3,6 +3,8 @@ import type { TriageRun, TriageAction, AIPlatform, TriageStep } from "./types";
 import { ipv6RepairText } from "./ip-path";
 
 // Codex uses this public entrance only as a connectivity reference. It is not a model/API health check.
+// networkHost is the documented public entrance host; the previous hardcoded
+// backend domain was removed because it was never a verified dependency.
 export const TRIAGE_TARGETS: AIPlatform[] = [
   {
     ...AI_PLATFORMS.find((p) => p.id === "chatgpt")!,
@@ -10,9 +12,27 @@ export const TRIAGE_TARGETS: AIPlatform[] = [
     name: "Codex",
     processNames: ["Codex", "codex"],
     description: "公开入口与本机连接观察，需在 Codex 中复现",
+    networkHost: "chatgpt.com",
   },
   ...AI_PLATFORMS,
 ];
+// Official status pages verified from provider data; targets without an entry
+// must not offer the service_status action at all.
+export const TRIAGE_STATUS_PAGES: Record<string, string> = {
+  codex: "https://status.openai.com",
+  chatgpt: "https://status.openai.com",
+  claude: "https://status.anthropic.com",
+};
+export function triageStatusPage(targetId: string) {
+  return TRIAGE_STATUS_PAGES[targetId];
+}
+// Maps a triage target to the reviewed adapter guidance that applies to the
+// agent product behind that entrance. Only direct, reviewed pairs are listed.
+export const TRIAGE_GUIDANCE: Record<string, string> = {
+  codex: "codex",
+  claude: "claude-code",
+  cursor: "cursor",
+};
 export const TRIAGE_ACTIONS: Record<TriageAction, string> = {
   retry: "重新检查",
   network_settings: "打开网络设置",
@@ -115,6 +135,12 @@ export function triageText(run: TriageRun): string {
         `${s.title} [${s.status}]：${s.summary}\n证据：${s.evidence.join("；") || "未取得"}\n建议：${s.suggestion || "等待检查"}`,
     ),
     run.comparison ? `复测比较：${run.comparison}` : "",
+    ...(run.guidance
+      ? [
+          `官方说明参考（${run.guidance.productId}，适配草案，非本机版本实测）：${run.guidance.sourceUrl}`,
+          ...run.guidance.facts.map((fact) => `官方说明：${fact}`),
+        ]
+      : []),
     ...(run.ipPath?.repair ? [ipv6RepairText(run.ipPath.repair)] : []),
     ...(run.ipv6Recovery ? [`先前记录的恢复命令：${run.ipv6Recovery.restoreCommand}`] : []),
     `用户复测：${run.verification === "restored" ? "用户确认已恢复" : run.verification === "still_failed" ? "用户确认仍有问题" : "用户尚未确认"}`,

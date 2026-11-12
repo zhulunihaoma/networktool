@@ -1,5 +1,9 @@
 export const electronBuildOptions = {
-  entryPoints: { main: "electron/main.ts", preload: "electron/preload.ts" },
+  entryPoints: {
+    main: "electron/main.ts",
+    preload: "electron/preload.ts",
+    guard: "electron/security/guard-entry.ts",
+  },
   outdir: "dist-electron",
   outExtension: { ".js": ".cjs" },
   bundle: true,

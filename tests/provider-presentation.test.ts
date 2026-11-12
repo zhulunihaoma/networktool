@@ -73,7 +73,7 @@ test("403和429是连通后的服务限制，区别于所有连接路径失败",
   );
   assert.match(restricted.label, /已连通/);
   assert.match(limited.label, /已连通/);
-  assert.match(limited.summary, /限制请求频率/);
+  assert.match(limited.summary, /限流/);
   assert.equal(failed.label, "本次未连通");
   assert.equal(failed.tone, "red");
 });

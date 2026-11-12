@@ -25,7 +25,7 @@ import { AI_PLATFORMS, platformHelpText } from "../src/shared/platforms";
 import { ProviderDoctor } from "./core/providers";
 import { probeEndpoint } from "./core/provider-probe";
 import { providerHelpText } from "../src/shared/providers";
-import { TRIAGE_TARGETS, triageText } from "../src/shared/triage";
+import { TRIAGE_TARGETS, triageStatusPage, triageText } from "../src/shared/triage";
 import { TriageDoctor } from "./core/triage";
 import { inspectIPPaths, validateIPRepair } from "./core/ip-path";
 import { ipv6RepairText } from "../src/shared/ip-path";
@@ -36,8 +36,16 @@ import {
 } from "./core/extension-updates";
 import { UPDATE_PAGE_URLS } from "./core/tool-updates";
 import { ToolRegistry } from "./core/tool-registry";
-import { FilePolicies } from "./core/file-policies";
+import { FileWorkflow } from "./core/file-workflow";
+import { SecurityCenter, copyGuardScript } from "./security/center";
+import { Forwarder } from "./security/forward";
+import { autoProtectAllowed } from "./security/auto-protect";
+import * as securityDoctor from "./security/doctor";
+import { checkMcpConfig } from "./security/mcp-check";
+import { SECURITY_TOOLS } from "../src/shared/security";
 import { SkillScanner } from "./core/skills";
+import { skillRiskLevel } from "../src/shared/skill-insights";
+import type { SkillScan } from "../src/shared/skills";
 import { ToolUsageTracker } from "./core/tool-usage";
 import { HandoffManager } from "./core/handoff";
 import { HistoryService } from "./core/history-service";
@@ -54,13 +62,17 @@ import {
 app.setName("360AI盒子");
 if (process.env.NETWORK_LENS_DATA_DIR)
   app.setPath("userData", process.env.NETWORK_LENS_DATA_DIR);
+// Isolated verification profiles may point at a temporary home so tests never
+// read or write the real user's tool configs. Requires an isolated data dir.
+if (process.env.NETWORK_LENS_DATA_DIR && process.env.NETWORK_LENS_TEST_HOME)
+  app.setPath("home", process.env.NETWORK_LENS_TEST_HOME);
 const dev = process.env.NETWORK_LENS_DEV === "1";
 let win: BrowserWindow | undefined;
 let manager: Manager;
 let doctor: PlatformDoctor;
 let providerDoctor: ProviderDoctor;
 let triage: TriageDoctor;
-let files: FilePolicies;
+let files: FileWorkflow;
 let skills: SkillScanner;
 let toolUsage: ToolUsageTracker | undefined;
 let appUpdater: AppUpdater | undefined;
@@ -174,8 +186,78 @@ app
       (reference) => registry.diagnosisContext(reference),
     );
     manager.init();
-    files = new FilePolicies(store);
-    skills = new SkillScanner(app.getPath("home"));
+    const securityDir = path.join(app.getPath("userData"), "security");
+    files = new FileWorkflow(store, path.join(securityDir, "file-policy-snapshot.json"));
+    fs.mkdirSync(securityDir, { recursive: true, mode: 0o700 });
+    const guardScript = copyGuardScript(
+      path.join(__dirname, "guard.cjs"),
+      securityDir,
+    );
+    const security = new SecurityCenter({
+      home: app.getPath("home"),
+      dataDir: securityDir,
+      autoProtect: autoProtectAllowed(process.env),
+      guard: {
+        runtime: process.execPath,
+        env: { ELECTRON_RUN_AS_NODE: "1" },
+        script: guardScript,
+        dataDir: securityDir,
+      },
+      doctor: securityDoctor,
+      publish: (event) => {
+        if (win && !win.isDestroyed())
+          win.webContents.send("security-event", event);
+      },
+      publishProgress: (p) => {
+        if (win && !win.isDestroyed())
+          win.webContents.send("security-progress", p);
+      },
+    });
+    const stopSecurityWatch = security.watch();
+    app.on("will-quit", stopSecurityWatch);
+    // Resume forwardding from where the last run stopped; a no-op when the
+    // user never enabled it.
+    try {
+      const forwarding = security.forwardSettings();
+      if (forwarding.enabled) {
+        const loop = new Forwarder({ dataDir: securityDir });
+        loop.start(forwarding);
+        app.on("will-quit", () => loop.stop());
+      }
+    } catch (error) {
+      console.warn("安全日志外送启动失败，已跳过", error);
+    }
+    // Protect-by-default: run once per start, before the window opens. The
+    // preference is persisted, so a manual "off" or a global opt-out wins.
+    // Never fail the app because a third-party config could not be updated.
+    if (autoProtectAllowed(process.env)) {
+      try {
+        security.runAutoProtect();
+      } catch (error) {
+        console.warn("自动开启防护失败，已跳过", error);
+      }
+    }
+    const securityEvent = (e: {
+      operation: string;
+      decision: "deny" | "allow" | "ask";
+      ruleId?: string;
+      reason?: string;
+      project?: string;
+    }) => {
+      security.record(
+        {
+          decision: e.decision,
+          operation: e.operation,
+          ruleId: e.ruleId,
+          reason: e.reason,
+        },
+        { tool: "app", project: e.project },
+        "scan",
+      );
+    };
+    skills = new SkillScanner(app.getPath("home"), [], undefined, {
+      onSecurityEvent: securityEvent,
+    });
     if (!toolUsage) {
       toolUsage = new ToolUsageTracker(store, listProcesses);
       toolUsage.start();
@@ -223,6 +305,225 @@ app
         return fn(...args);
       });
     handle("overview", () => manager.overview());
+    const securityTool = z.enum(SECURITY_TOOLS);
+    handle("security-overview", () => security.overview());
+    handle("security-timeline", (filter) =>
+      security.timeline(
+        z
+          .object({
+            source: z
+              .enum([
+                "all",
+                "real_block",
+                "real_allow",
+                "self_check",
+                "scan",
+                "network",
+                "session",
+                "action",
+                "error",
+              ])
+              .optional(),
+            sources: z
+              .array(
+                z.enum([
+                  "real_block",
+                  "real_allow",
+                  "self_check",
+                  "scan",
+                  "network",
+                  "session",
+                  "action",
+                  "error",
+                ]),
+              )
+              .max(8)
+              .optional(),
+            ruleId: z.string().max(60).optional(),
+            tool: z.string().max(50).optional(),
+            query: z.string().max(200).optional(),
+            limit: z.number().int().min(1).max(1000).optional(),
+            offset: z.number().int().min(0).max(100000).optional(),
+            from: z.number().int().min(0).optional(),
+            to: z.number().int().min(0).optional(),
+          })
+          .parse(filter),
+      ),
+    );
+    handle("security-doctor", () => security.doctor());
+    handle("security-retro-scan", () => security.retroScan());
+    handle("security-incidents", (filter) =>
+      security.incidents(
+        z
+          .object({
+            severity: z
+              .enum(["all", "critical", "high", "medium", "low"])
+              .optional(),
+            limit: z.number().int().min(1).max(500).optional(),
+          })
+          .parse(filter ?? {}),
+      ),
+    );
+    handle("security-chains", (filter) =>
+      security.chains(
+        z
+          .object({
+            incidentId: z.string().max(120).optional(),
+            severity: z
+              .enum(["all", "critical", "high", "medium", "low"])
+              .optional(),
+            limit: z.number().int().min(1).max(500).optional(),
+          })
+          .parse(filter ?? {}),
+      ),
+    );
+    handle("security-last-doctor", () => security.lastReport());
+    handle("security-forward-settings", () => security.forwardSettings());
+    handle("security-forward-save", (settings) =>
+      security.saveForwardSettings(
+        z
+          .object({
+            enabled: z.boolean(),
+            includeIncidents: z.boolean().optional(),
+            targets: z
+              .array(
+                z
+                  .object({
+                    id: z.string().max(80).optional(),
+                    enabled: z.boolean().optional(),
+                    kind: z.enum(["http", "udp", "tcp", "tls"]),
+                    host: z.string().max(255).optional(),
+                    port: z.number().int().min(1).max(65535).optional(),
+                    url: z.string().max(2000).optional(),
+                    token: z.string().max(500).optional(),
+                  })
+                  .strict(),
+              )
+              .max(8),
+          })
+          .parse(settings),
+      ),
+    );
+    handle("security-forward-stats", () => security.forwardStats());
+    handle("security-forward-now", () => security.forwardNow());
+    handle("security-forward-export", () => security.exportForwardFile());
+    handle("security-ignore", (id, ignored) =>
+      security.ignoreFinding(
+        z.string().max(300).parse(id),
+        z.boolean().parse(ignored),
+      ),
+    );
+    handle("security-reveal-finding", (id) => {
+      const file = security.findingPath(z.string().max(300).parse(id));
+      if (file) shell.showItemInFolder(file);
+    });
+    handle("security-inventory", (rebaseline) =>
+      security.inventoryCheck(z.boolean().parse(rebaseline)),
+    );
+    handle("security-trust-codex", () => security.trustCodex());
+    handle("security-preview", (kind, target) =>
+      security.preview(
+        z.enum(["enable", "disable", "fix", "fix_all"]).parse(kind),
+        z.string().max(300).optional().parse(target),
+      ),
+    );
+    handle("security-apply", (token) =>
+      security.apply(z.string().uuid().parse(token)),
+    );
+    handle("security-self-check", (tool) =>
+      security.selfCheck(securityTool.parse(tool)),
+    );
+    handle("security-auto-protect", (enabled) =>
+      security.setAutoProtect(z.boolean().parse(enabled)),
+    );
+    handle("security-run-auto-protect", () => security.runAutoProtect());
+    handle("security-choose-project", async () => {
+      const result = await dialog.showOpenDialog(win!, {
+        title: "选择要保护的项目",
+        properties: ["openDirectory"],
+      });
+      return result.canceled || !result.filePaths[0]
+        ? undefined
+        : fs.realpathSync(result.filePaths[0]);
+    });
+    handle("security-check-mcp", (text) => {
+      const result = checkMcpConfig(z.string().min(1).max(200000).parse(text));
+      security.record(
+        {
+          decision: result.level === "high" ? "deny" : "allow",
+          operation: "MCP 安装前检查",
+          reason: `发现 ${result.findings.length} 项提醒；未安装或执行配置`,
+        },
+        { tool: "app" },
+        "scan",
+      );
+      return result;
+    });
+    handle("security-copy-mcp", (text) => {
+      clipboard.writeText(
+        checkMcpConfig(z.string().min(1).max(200000).parse(text))
+          .redactedConfig,
+      );
+    });
+    handle("security-save-policy", (policy) => {
+      const parsed = z
+        .object({
+          version: z.literal(1),
+          protectedBranches: z.array(z.string().max(300)).max(200),
+          blockedCommands: z.array(z.string().max(300)).max(200),
+          sensitivePaths: z.array(z.string().max(300)).max(200),
+          writeProtectedPaths: z.array(z.string().max(300)).max(200),
+          projectRoots: z.array(z.string()).max(200),
+          allowOutsideProjectWrites: z.boolean(),
+          autoProtect: z.boolean().optional(),
+          toolPreferences: z
+            .record(z.string().max(40), z.enum(["auto", "off"]))
+            .optional(),
+          projects: z
+            .array(
+              z.object({
+                root: z.string().max(2000),
+                enabled: z.boolean(),
+                protectedBranches: z.array(z.string().max(300)).max(100),
+                protectedPaths: z.array(z.string().max(300)).max(100),
+              }),
+            )
+            .max(50)
+            .optional(),
+          rules: z
+            .array(
+              z.object({
+                id: z.string().max(100),
+                enabled: z.boolean(),
+                level: z.string().max(30),
+              }),
+            )
+            .max(100),
+        })
+        .parse(policy);
+      return security.savePolicy(parsed);
+    });
+    handle("security-add-exception", (id) =>
+      security.addException(z.string().max(100).parse(id)),
+    );
+    handle("security-remove-exception", (rule, project) =>
+      security.removeException(
+        z.string().max(100).parse(rule),
+        z.string().max(1000).parse(project),
+      ),
+    );
+    handle("security-export", async (format) => {
+      const type = z.enum(["md", "json"]).parse(format);
+      const result = await dialog.showSaveDialog(win!, {
+        title: "导出安全事件",
+        defaultPath: `security-events.${type}`,
+      });
+      if (result.canceled || !result.filePath) return { cancelled: true };
+      fs.writeFileSync(result.filePath, security.exportReport(type), {
+        mode: 0o600,
+      });
+      return { path: result.filePath };
+    });
     const updatePreference = z.enum(["auto", "gitee", "github"]);
     const savedSource = updatePreference.safeParse(store.assistant("app-update-source", "auto"));
     const updater = appUpdater = new AppUpdater({
@@ -258,10 +559,31 @@ app
       else memories.addDirectory(selectedAgent, result.filePaths[0]);
       return memories.scan(selectedAgent);
     });
-    const history = new HistoryService(path.join(app.getPath("userData"), "handoff-history"), app.getPath("home"));
-    const handoffs = new HandoffManager(undefined, undefined, undefined, history);
+    const history = new HistoryService(
+      path.join(app.getPath("userData"), "handoff-history"),
+      app.getPath("home"),
+    );
+    const handoffs = new HandoffManager(
+      undefined,
+      undefined,
+      undefined,
+      history,
+      { onSecurityEvent: securityEvent },
+    );
     app.once("before-quit", () => history.close());
-    handle("handoff-tools", () => discoverHandoffTools());
+    handle("handoff-tools", async () => {
+      const tools = await discoverHandoffTools();
+      for (const tool of tools) {
+        if (!tool.readable) continue;
+        try {
+          const page = await history.browse(tool.id, { refresh: true });
+          tool.sessionCount = page.total;
+        } catch {
+          // An unreadable source must not hide other tools or look like zero sessions.
+        }
+      }
+      return tools;
+    });
     handle("handoff-list", (source) => handoffs.list(z.enum(HANDOFF_SOURCES).parse(source || "OpenCode")));
     handle("handoff-browse", (source, query) => handoffs.browse(z.enum(HANDOFF_SOURCES).parse(source || "OpenCode"), z.object({ projectId: z.string().max(4096).optional(), cursor: z.string().uuid().optional(), search: z.string().max(500).optional(), kind: z.enum(["conversation", "archived", "subagent", "automation", "draft", "deleted", "orphan"]).optional(), refresh: z.boolean().optional() }).strict().optional().parse(query)));
     handle("handoff-context", (id, offset) => handoffs.readContext(z.string().uuid().parse(id), z.number().int().nonnegative().optional().parse(offset)));
@@ -287,12 +609,49 @@ app
       return result.canceled ? undefined : result.filePaths[0];
     }));
     handle("handoff-copy", (token) => handoffs.copy(z.string().uuid().parse(token), (content) => clipboard.writeText(content)));
-    handle("skills", () => skills.scan());
-    handle("preview-skills", (ids, target) => skills.preview(z.array(z.string().max(200)).max(500).parse(ids), z.string().max(40).parse(target)));
-    handle("copy-skills", (ids, target, token, autoConvert) => skills.copy(z.array(z.string().max(200)).max(500).parse(ids), z.string().max(40).parse(target), z.string().max(100).parse(token), z.boolean().parse(autoConvert)));
-    handle("preview-delete-skills", (ids) => skills.previewDelete(z.array(z.string().max(200)).max(500).parse(ids)));
-    handle("delete-skills", (ids, token) => skills.deleteSkills(z.array(z.string().max(200)).max(500).parse(ids), z.string().uuid().parse(token)));
-    handle("restore-skill", (id) => skills.restoreSkill(z.string().uuid().parse(id)));
+    const publishSkillScan = (scan: SkillScan) => {
+      const visible = scan.items.filter(i => !i.insight?.riskIgnored);
+      const high = visible.filter(i => skillRiskLevel(i) === 'high').length;
+      const medium = visible.filter(i => skillRiskLevel(i) === 'medium').length;
+      security.updateSkillSummary({ checkedAt: scan.checkedAt ?? new Date().toISOString(), installed: scan.items.length, groups: scan.groups?.length ?? 0, high, medium, incomplete: scan.items.filter(i => !i.insight?.risk || i.insight.risk.truncated || i.insight.riskError).length, ignored: scan.items.filter(i => i.insight?.riskIgnored).length });
+      security.record({ operation: 'Skill 目录安全扫描', decision: high || medium ? 'ask' : 'allow', reason: `检查 ${scan.items.length} 个安装项；${high} 项高风险、${medium} 项需注意。静态发现，不代表已执行或真实拦截` }, { tool: 'app' }, 'scan');
+      return scan;
+    };
+    handle("skills", async () => publishSkillScan(await skills.scan()));
+    handle("skill-preference", async (id, kind, value) => publishSkillScan(await skills.skillPreference(z.string().max(200).parse(id), z.enum(['preserve', 'ignore-risk']).parse(kind), z.boolean().parse(value))));
+    handle("compare-skills", (left, right) => skills.compareSkills(z.string().max(200).parse(left), z.string().max(200).parse(right)));
+    handle("preview-merge-skills", (keepId, ids) => skills.previewMerge(z.string().max(200).parse(keepId), z.array(z.string().max(200)).min(1).max(500).parse(ids)));
+    handle("merge-skills", (keepId, ids, token) => skills.mergeSkills(z.string().max(200).parse(keepId), z.array(z.string().max(200)).min(1).max(500).parse(ids), z.string().uuid().parse(token)));
+    handle("skill-tidy", () => skills.tidyReport());
+    handle("apply-skill-tidy", (ids, token) => skills.applyTidy(z.array(z.string().max(64)).min(1).max(500).parse(ids), z.string().uuid().parse(token)));
+    handle("revert-skill-move", (id) => skills.revertMove(z.string().uuid().parse(id)));
+    handle("preview-skills", (ids, target) =>
+      skills.preview(
+        z.array(z.string().max(200)).max(500).parse(ids),
+        z.string().max(40).parse(target),
+      ),
+    );
+    handle("copy-skills", (ids, target, token, autoConvert, riskAcknowledged) =>
+      skills.copy(
+        z.array(z.string().max(200)).max(500).parse(ids),
+        z.string().max(40).parse(target),
+        z.string().max(100).parse(token),
+        z.boolean().parse(autoConvert),
+        z.boolean().optional().parse(riskAcknowledged) ?? false,
+      ),
+    );
+    handle("preview-delete-skills", (ids) =>
+      skills.previewDelete(z.array(z.string().max(200)).max(500).parse(ids)),
+    );
+    handle("delete-skills", (ids, token) =>
+      skills.deleteSkills(
+        z.array(z.string().max(200)).max(500).parse(ids),
+        z.string().uuid().parse(token),
+      ),
+    );
+    handle("restore-skill", (id) =>
+      skills.restoreSkill(z.string().uuid().parse(id)),
+    );
     handle("tools", () => registry.current());
     handle("discover-tools", () => registry.scan());
     handle("check-tool-updates", (id) =>
@@ -338,27 +697,35 @@ app
       return files.addCandidate(id, choice.filePaths[0]);
     });
     const decision = z.enum(["allow", "ask", "deny"]);
-    handle("save-file-policy", (scopeId, policy, expected) =>
-      files.save(
-        sessionId.parse(scopeId),
-        z
-          .object({
-            resourceId: sessionId,
-            read: decision,
-            write: decision,
-            disclose: decision,
-            enabled: z.boolean(),
-          })
-          .strict()
-          .parse(policy),
-        z.number().int().min(0).max(1000000).parse(expected),
-      ),
-    );
+    const fileDraft = z.object({resourceId: sessionId, read: decision, write: decision, delete: decision.optional(), disclose: decision, enabled: z.boolean()}).strict();
+    handle("trial-file-policy", (id, draft, expected) => files.trial(sessionId.parse(id), fileDraft.parse(draft), z.number().int().min(0).max(1000000).parse(expected)));
+    handle("publish-file-policy", id => files.publish(sessionId.parse(id)));
+    handle("rollback-file-policy", (scope, resource, expected) => files.rollback(sessionId.parse(scope), sessionId.parse(resource), z.number().int().min(1).parse(expected)));
+    handle("reconfirm-file-candidate", (scope, resource) => files.reconfirm(sessionId.parse(scope),sessionId.parse(resource)));
+    handle("review-file-candidate", (scope, resource, deferred) => files.review(sessionId.parse(scope), sessionId.parse(resource), z.boolean().parse(deferred)));
+    handle("start-file-task", (scope, resource, kind) => files.start(sessionId.parse(scope), sessionId.parse(resource), z.enum(["preview", "redact"]).parse(kind)));
+    handle("grant-file-task", (task, reason) => files.grant(sessionId.parse(task), z.string().trim().min(1).max(200).parse(reason)));
+    handle("run-file-task", task => files.run(sessionId.parse(task)));
+    handle("revoke-file-grant", id => files.revoke(sessionId.parse(id)));
+    handle("export-file-task-copy", async (rawTask, rawDigest) => {
+      const task = sessionId.parse(rawTask), digest = z.string().length(64).parse(rawDigest);
+      await files.copyContent(task, digest);
+      const choice = await dialog.showSaveDialog(win!, {title: "保存本地脱敏副本（不覆盖已有文件）", defaultPath: "redacted-copy.txt", filters:[{name:"文本副本",extensions:["txt"]}]});
+      if (choice.canceled || !choice.filePath) return {cancelled:true};
+      const content = await files.copyContent(task, digest);
+      await fs.promises.writeFile(choice.filePath, content, {encoding:"utf8", flag:"wx", mode:0o600});
+      return {cancelled:false,path:choice.filePath};
+    });
+    handle("retry-file-deployment", () => files.retryDeployment());
+    handle("save-file-policy", async (scopeId, policy, expected) => {
+      const trial = await files.trial(sessionId.parse(scopeId), fileDraft.parse(policy), z.number().int().min(0).max(1000000).parse(expected));
+      return files.publish(trial.id);
+    });
     handle("evaluate-file-policy", (scopeId, resourceId, operation) =>
       files.evaluate(
         sessionId.parse(scopeId),
         sessionId.parse(resourceId),
-        z.enum(["read", "write", "disclose"]).parse(operation),
+        z.enum(["read", "write", "delete", "disclose"]).parse(operation),
       ),
     );
     handle("audit-events", (filter) =>
@@ -367,7 +734,7 @@ app
           .object({
             scopeId: sessionId.optional(),
             operation: z
-              .enum(["enumerate", "policy_update", "read", "write", "disclose"])
+              .enum(["enumerate", "policy_update", "read", "write", "delete", "disclose"])
               .optional(),
             cursor: z.number().int().positive().optional(),
           })
@@ -485,11 +852,18 @@ app
       }
       if (action === "open_platform" || action === "service_status") {
         const target = TRIAGE_TARGETS.find((p) => p.id === run.targetId)!;
-        await shell.openExternal(
-          action === "service_status"
-            ? "https://status.openai.com/"
-            : target.url,
-        );
+        if (action === "service_status") {
+          // Status page comes from reviewed target data; never fall back to a
+          // fixed URL that would misattribute another vendor's status.
+          const statusPage = triageStatusPage(run.targetId);
+          if (!statusPage)
+            throw new Error("该排查目标没有已核实的官方状态页，请直接打开平台入口。");
+          await shell.openExternal(statusPage);
+          return {
+            message: "已打开官方状态页。请在原工具确认登录与实际任务是否正常。",
+          };
+        }
+        await shell.openExternal(target.url);
         return {
           message: "已打开官方页面。请在原工具确认登录与实际任务是否正常。",
         };

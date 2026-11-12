@@ -6,6 +6,9 @@ export interface NetworkGuidance {
   testedVersions: readonly string[];
   reviewedAt: string;
   source: { label: string; url: string };
+  // Structured proxy-protocol support distilled from the reviewed source.
+  // Omitted means unknown; never infer support from absence.
+  proxySupport?: { socks: boolean };
   facts: string[];
   manualSteps: string[];
   missingTests: string[];
@@ -43,6 +46,7 @@ export const NETWORK_GUIDANCE: readonly NetworkGuidance[] = [
       label: "Claude Code 官方企业网络配置",
       url: "https://code.claude.com/docs/en/network-config",
     },
+    proxySupport: { socks: false },
     facts: [
       "当前官方文档说明代理变量在启动时读取；小写与大写变量有具体优先级，不能以通用规则替代。Claude Code 不支持 SOCKS 代理。",
       "CLI、Desktop 托管连接、后台会话的配置作用域不同；CA 信任还取决于安装方式与运行时版本。",

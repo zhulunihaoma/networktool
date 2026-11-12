@@ -235,7 +235,7 @@ test("unknown scans are not empty scans, and malformed media is not silently acc
   const scan = await new AttachmentSet(d).inspect();
   assert(scan.entries.every((e) => e.status === "error"));
 });
-test("export is reviewed, partial is explicit, ZIP names are safe, files are deduplicated and manifest keeps messages", () =>
+test("preview automatically skips missing attachments, ZIP names are safe, files are deduplicated and manifest keeps messages", () =>
   fixture(async (root) => {
     const manager = new HandoffManager();
     const data = manager.importRaw(
@@ -251,11 +251,10 @@ test("export is reviewed, partial is explicit, ZIP names are safe, files are ded
     );
     const scan = await manager.scanAttachments(data.attachmentSession!);
     assert.equal(scan.entries.length, 3);
-    assert.throws(
-      () => manager.prepare("继续", "Codex", options(scan)),
-      /明确确认/,
-    );
-    const p = manager.prepare("继续", "Codex", options(scan, true));
+    const p = manager.prepare("继续", "Codex", options(scan));
+    assert.match(p.content, /附件缺口.*1 条/);
+    assert.match(p.content, /missing.pdf/);
+    assert.equal(p.attachments?.complete, false);
     await assert.rejects(
       manager.copy(p.token, async () => {}),
       /先导出/,
@@ -302,6 +301,31 @@ test("export is reviewed, partial is explicit, ZIP names are safe, files are ded
       /过期/,
     );
   }));
+test("empty, unavailable, blocked and deselected attachments continue as text without an empty export", async () => {
+  const cases = [
+    [],
+    [{ type: "file", url: "https://invalid.invalid/doc.pdf", filename: "missing.pdf" }],
+    [{ type: "file", url: "data:text/plain;base64,dmFsdWU=", filename: ".env" }],
+    [{ type: "file", url, filename: "image.png" }],
+  ];
+  for (const parts of cases) {
+    const manager = new HandoffManager();
+    const imported = manager.importRaw(raw(parts));
+    const scan = await manager.scanAttachments(imported.attachmentSession!);
+    const chosen = { ...options(scan), attachmentIds: [] };
+    assert.throws(() => manager.prepare("继续", "Codex", { ...chosen, attachmentScanToken: "stale" }), /已变更/);
+    const preview = manager.prepare("继续", "Codex", chosen);
+    assert.equal(preview.attachments, undefined);
+    assert.match(preview.content, /仅交接文字.*不导出附件包/);
+    if (parts.length) assert.match(preview.content, /附件缺口.*1 条/);
+    let chooseCalls = 0;
+    await assert.rejects(manager.exportPackage(preview.token, async () => { chooseCalls++; return undefined; }), /重新生成/);
+    assert.equal(chooseCalls, 0);
+    let copied = "";
+    await manager.copy(preview.token, async content => { copied = content; });
+    assert.equal(copied, preview.content);
+  }
+});
 test("scan and import changes invalidate tokens, manual files are opt-in and captured at scan time", () =>
   fixture(async (root) => {
     const manager = new HandoffManager();

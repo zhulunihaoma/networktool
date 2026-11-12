@@ -1,0 +1,2687 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>文件策略 · Network Lens</title>
+    <style>
+      /* Offline preview tokens: security-console-design/assets/preview-tokens.css. */
+      :root {
+        color-scheme: light;
+        --console-font:
+          -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI",
+          "Microsoft YaHei UI", Arial, sans-serif;
+        --p1: #d9f4ee;
+        --p5: #1db887;
+        --p6: #00ab7a;
+        --p7: #039972;
+        --p8: #008563;
+        --p10: #013c32;
+        --gray-1: #fff;
+        --gray-2: #f8f9fa;
+        --gray-3: #f2f3f5;
+        --gray-4: #e8eaed;
+        --gray-5: #dfe1e6;
+        --gray-6: #aeb2b8;
+        --gray-7: #8a9099;
+        --gray-8: #525966;
+        --gray-9: #242933;
+        --red-1: #ffe8e6;
+        --red-6: #f0131e;
+        --red-7: #c90616;
+        --orange-1: #fff8e6;
+        --orange-6: #f58a02;
+        --orange-7: #cf6e00;
+        --green-1: #eff8ee;
+        --green-6: #52c41a;
+        --green-7: #389e0d;
+        --blue-1: #e6f7ff;
+        --blue-6: #1890ff;
+        --blue-7: #096dd9;
+        --content-padding: 16px;
+        --panel-padding: 24px;
+        --panel-gap: 16px;
+        --panel-radius: 8px;
+        --table-row-regular: 48px;
+        --shadow-2-left: -8px 0 24px rgb(0 0 0 / 16%);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--gray-3);
+        font: 14px/1.6 var(--console-font);
+        color: var(--gray-9);
+      }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+        border: 1px solid var(--gray-5);
+        border-radius: 6px;
+        background: white;
+        color: var(--gray-9);
+        min-height: 36px;
+        padding: 6px 14px;
+        transition: background 0.15s;
+      }
+      button:hover {
+        background: var(--gray-2);
+        border-color: var(--p6);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      button.primary {
+        background: var(--p6);
+        border-color: var(--p6);
+        color: #fff;
+        font-weight: 600;
+      }
+      button.primary:hover {
+        background: var(--p5);
+      }
+      button.text {
+        border: 0;
+        color: var(--p8);
+        background: transparent;
+        padding: 4px 8px;
+      }
+      button.danger {
+        color: var(--red-7);
+      }
+      :focus-visible {
+        outline: 3px solid var(--blue-6);
+        outline-offset: 3px;
+      }
+      input,
+      select,
+      textarea {
+        border: 1px solid var(--gray-5);
+        border-radius: 5px;
+        padding: 8px 10px;
+        background: white;
+        color: var(--gray-9);
+        max-width: 100%;
+      }
+      textarea {
+        resize: vertical;
+        min-height: 88px;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      h1 {
+        font-size: 28px;
+        letter-spacing: -0.8px;
+        line-height: 1.4;
+      }
+      h2 {
+        font-size: 18px;
+        line-height: 1.5;
+      }
+      h3 {
+        font-size: 15px;
+      }
+      small,
+      .small {
+        font-size: 12px;
+      }
+      .muted {
+        color: var(--gray-8);
+      }
+      .caption {
+        color: var(--gray-7);
+        font-size: 12px;
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      .eyebrow {
+        font-size: 11px;
+        letter-spacing: 2px;
+        font-weight: 650;
+        color: var(--p8);
+        margin-bottom: 8px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .between {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .wrap {
+        flex-wrap: wrap;
+      }
+      .stack {
+        display: grid;
+        gap: 16px;
+      }
+      .panel {
+        background: #fff;
+        border: 1px solid var(--gray-4);
+        border-radius: 8px;
+        padding: 24px;
+        min-width: 0;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 4px;
+        padding: 2px 8px;
+        background: var(--gray-3);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .badge.green {
+        background: var(--green-1);
+        color: #286917;
+      }
+      .badge.red {
+        background: var(--red-1);
+        color: var(--red-7);
+      }
+      .badge.orange {
+        background: var(--orange-1);
+        color: #986000;
+      }
+      .badge.blue {
+        background: var(--blue-1);
+        color: var(--blue-7);
+      }
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+      .notice {
+        padding: 12px 16px;
+        border: 1px solid #f1dbac;
+        background: var(--orange-1);
+        border-radius: 6px;
+        color: #765414;
+        font-size: 13px;
+      }
+      .notice.info {
+        background: var(--blue-1);
+        border-color: #c5e8ff;
+        color: var(--blue-7);
+      }
+      .notice.success {
+        background: var(--green-1);
+        border-color: #d6ebd0;
+        color: #286917;
+      }
+      .notice.error {
+        background: var(--red-1);
+        border-color: #f8c3be;
+        color: var(--red-7);
+      }
+      .preview-bar {
+        background: #fff;
+        border-bottom: 1px solid var(--gray-4);
+        padding: 10px 28px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .preview-mark {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 12px;
+        color: var(--gray-8);
+      }
+      .brand-mark {
+        width: 25px;
+        height: 25px;
+        background: var(--p10);
+        color: white;
+        border-radius: 6px;
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+      }
+      .switcher {
+        display: flex;
+        gap: 3px;
+        border-radius: 6px;
+        background: var(--gray-3);
+        padding: 3px;
+      }
+      .switcher button {
+        border: 0;
+        background: none;
+        min-height: 28px;
+        padding: 3px 12px;
+        font-size: 12px;
+      }
+      .switcher .selected {
+        background: white;
+        color: var(--p8);
+        box-shadow: 0 1px 4px #0000000b;
+        font-weight: 600;
+      }
+      .container {
+        max-width: 1800px;
+        margin: auto;
+        padding: 24px 32px 16px;
+      }
+      .heading {
+        margin-bottom: 24px;
+      }
+      .heading p {
+        margin-top: 6px;
+        color: var(--gray-8);
+      }
+      .crumb {
+        font-size: 12px;
+        color: var(--gray-8);
+        margin-bottom: 12px;
+      }
+      .nav {
+        display: flex;
+        gap: 28px;
+        border-bottom: 1px solid var(--gray-5);
+        margin-bottom: 24px;
+      }
+      .nav button {
+        background: none;
+        border: 0;
+        border-radius: 0;
+        padding: 12px 2px;
+        color: var(--gray-8);
+        font-weight: 500;
+        position: relative;
+      }
+      .nav button.active {
+        color: var(--p8);
+        font-weight: 650;
+      }
+      .nav button.active:after {
+        content: "";
+        position: absolute;
+        bottom: -1px;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: var(--p6);
+      }
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.55fr) minmax(340px, 1fr);
+        gap: 24px;
+        align-items: center;
+        background: #fff;
+        padding: 28px;
+        border-radius: 8px;
+        border: 1px solid var(--gray-4);
+        margin-bottom: 16px;
+        overflow: hidden;
+      }
+      .hero h2 {
+        font-size: 24px;
+        line-height: 1.45;
+        max-width: 620px;
+        margin: 8px 0 10px;
+      }
+      .hero p {
+        color: var(--gray-8);
+        max-width: 580px;
+      }
+      .hero-actions {
+        margin-top: 20px;
+      }
+      .pipeline {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1fr 34px 1.2fr 34px 1fr;
+        align-items: center;
+        background: var(--gray-2);
+        padding: 28px 16px;
+        border-radius: 8px;
+        border: 1px solid var(--gray-4);
+      }
+      .pipe-node {
+        text-align: center;
+        font-size: 12px;
+      }
+      .pipe-icon {
+        height: 50px;
+        width: 50px;
+        border: 1px solid var(--gray-5);
+        background: #fff;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        margin: 0 auto 10px;
+        font:
+          600 20px ui-monospace,
+          monospace;
+      }
+      .pipe-node.center .pipe-icon {
+        background: var(--p10);
+        color: #fff;
+        border: 0;
+        width: 60px;
+        height: 60px;
+      }
+      .pipe-arrow {
+        color: var(--gray-6);
+        text-align: center;
+        font-size: 22px;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        background: #fff;
+        border: 1px solid var(--gray-4);
+        border-radius: 8px;
+        padding: 20px 0;
+        margin-bottom: 16px;
+      }
+      .stat {
+        padding: 0 24px;
+        border-right: 1px solid var(--gray-4);
+      }
+      .stat:last-child {
+        border: 0;
+      }
+      .stat .value {
+        font-size: 30px;
+        line-height: 1.4;
+        font-weight: 650;
+        letter-spacing: -1px;
+        margin-top: 4px;
+      }
+      .stat .value span {
+        font-size: 12px;
+        font-weight: 400;
+        letter-spacing: 0;
+        margin-left: 6px;
+        color: var(--gray-8);
+      }
+      .two-col {
+        display: grid;
+        grid-template-columns: minmax(0, 2.2fr) minmax(300px, 1fr);
+        gap: 16px;
+      }
+      .section-head {
+        margin-bottom: 16px;
+      }
+      .table-scroll {
+        overflow: auto;
+        max-height: 440px;
+        border-top: 1px solid var(--gray-4);
+      }
+      table {
+        border-collapse: separate;
+        border-spacing: 0;
+        width: 100%;
+        font-size: 13px;
+        white-space: nowrap;
+      }
+      th,
+      td {
+        height: 48px;
+        padding: 8px 14px;
+        border-bottom: 1px solid var(--gray-4);
+        text-align: left;
+        background: white;
+      }
+      th {
+        position: sticky;
+        top: 0;
+        background: var(--gray-2);
+        color: var(--gray-8);
+        font-weight: 500;
+        z-index: 2;
+      }
+      td:first-child,
+      th:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        min-width: 180px;
+      }
+      th:first-child {
+        z-index: 3;
+      }
+      td:last-child,
+      th:last-child {
+        position: sticky;
+        right: 0;
+        z-index: 1;
+      }
+      th:last-child {
+        z-index: 3;
+      }
+      tbody tr:hover td {
+        background: var(--gray-2);
+      }
+      .table-footer {
+        font-size: 12px;
+        color: var(--gray-8);
+        padding-top: 8px;
+        text-align: right;
+      }
+      .cover-item {
+        display: flex;
+        gap: 12px;
+        padding: 16px 0;
+        border-bottom: 1px solid var(--gray-4);
+      }
+      .cover-item:last-child {
+        border-bottom: 0;
+        padding-bottom: 0;
+      }
+      .channel-icon {
+        flex: none;
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--gray-4);
+        border-radius: 8px;
+        color: var(--gray-8);
+        font-size: 12px;
+        font-weight: 650;
+      }
+      .cover-item p {
+        font-size: 12px;
+        color: var(--gray-8);
+        margin-top: 4px;
+      }
+      .cover-item .badge {
+        margin-top: 8px;
+      }
+      .mini-event {
+        display: flex;
+        gap: 12px;
+        padding: 14px 0;
+        border-bottom: 1px solid var(--gray-4);
+        align-items: flex-start;
+      }
+      .mini-event .event-line {
+        width: 3px;
+        height: 36px;
+        background: var(--gray-5);
+        border-radius: 4px;
+        flex: none;
+      }
+      .mini-event .event-line.red {
+        background: var(--red-6);
+      }
+      .mini-event .event-line.green {
+        background: var(--green-6);
+      }
+      .mini-event .event-line.orange {
+        background: var(--orange-6);
+      }
+      .mini-event p {
+        font-size: 12px;
+        color: var(--gray-8);
+      }
+      .action-label {
+        display: inline-block;
+        padding: 2px 0;
+        font-size: 12px;
+      }
+      .action-label.deny {
+        color: var(--red-7);
+      }
+      .action-label.ask {
+        color: #986000;
+      }
+      .action-label.allow {
+        color: #286917;
+      }
+      .asset-type {
+        display: inline-grid;
+        place-items: center;
+        background: var(--gray-3);
+        border: 1px solid var(--gray-4);
+        height: 28px;
+        width: 28px;
+        border-radius: 5px;
+        font-size: 9px;
+        letter-spacing: -0.5px;
+        color: var(--gray-8);
+        margin-right: 10px;
+        vertical-align: middle;
+      }
+      .filter {
+        display: flex;
+        gap: 8px;
+        margin: 16px 0;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .filter input {
+        width: 250px;
+      }
+      .empty {
+        padding: 40px 16px;
+        text-align: center;
+        color: var(--gray-8);
+      }
+      .split {
+        display: grid;
+        grid-template-columns: 340px minmax(0, 1fr);
+        gap: 16px;
+      }
+      .scenario {
+        width: 100%;
+        text-align: left;
+        padding: 16px;
+        margin-bottom: 8px;
+        display: block;
+      }
+      .scenario.active {
+        border-color: var(--p6);
+        background: #f2fbf7;
+      }
+      .scenario .num {
+        font-size: 11px;
+        color: var(--p8);
+        margin-bottom: 6px;
+        display: block;
+      }
+      .scenario p {
+        font-size: 12px;
+        color: var(--gray-8);
+        margin-top: 4px;
+      }
+      .lab-request {
+        border: 1px solid var(--gray-4);
+        border-radius: 6px;
+        background: var(--gray-2);
+        padding: 16px;
+        margin: 20px 0;
+      }
+      .kv {
+        display: grid;
+        grid-template-columns: 112px minmax(0, 1fr);
+        gap: 12px;
+        font-size: 13px;
+      }
+      .kv dt {
+        color: var(--gray-8);
+      }
+      .kv dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      .result {
+        border: 1px solid var(--gray-4);
+        border-radius: 8px;
+        padding: 20px;
+        margin-top: 20px;
+      }
+      .result h3 {
+        font-size: 18px;
+        margin: 8px 0;
+      }
+      .trace {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin: 24px 0;
+      }
+      .trace-step {
+        border-top: 2px solid var(--p6);
+        padding-top: 12px;
+        font-size: 12px;
+      }
+      .trace-step b {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .trace-step span {
+        color: var(--gray-8);
+      }
+      .channel-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+      }
+      .health-card h3 {
+        font-size: 17px;
+        margin: 16px 0 4px;
+      }
+      .health-card p {
+        font-size: 13px;
+        color: var(--gray-8);
+        min-height: 62px;
+      }
+      .health-card .badge {
+        margin: 16px 0;
+      }
+      .health-card button {
+        margin-top: 12px;
+      }
+      .step-list {
+        counter-reset: setup;
+        padding-left: 0;
+        list-style: none;
+        margin: 16px 0;
+      }
+      .step-list li {
+        counter-increment: setup;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--gray-4);
+      }
+      .step-list li:before {
+        content: counter(setup);
+        width: 25px;
+        height: 25px;
+        display: grid;
+        place-items: center;
+        background: var(--gray-3);
+        border-radius: 50%;
+        font-size: 12px;
+      }
+      .footer {
+        margin-top: 24px;
+        font-size: 12px;
+        color: var(--gray-8);
+        padding: 8px 0;
+      }
+      .footer button {
+        font-size: 12px;
+      }
+      .grant-item {
+        padding: 16px 0;
+        border-bottom: 1px solid var(--gray-4);
+      }
+      .grant-item h3 {
+        margin-bottom: 4px;
+      }
+      dialog {
+        border: 0;
+        border-radius: 8px;
+        padding: 0;
+        width: 560px;
+        max-width: calc(100vw - 32px);
+        max-height: calc(100dvh - 40px);
+        box-shadow: 0 20px 70px #0003;
+        color: var(--gray-9);
+      }
+      dialog::backdrop {
+        background: #101e2b55;
+      }
+      dialog.drawer {
+        position: fixed;
+        inset: 0 0 0 auto;
+        margin: 0;
+        height: 100dvh;
+        max-height: 100dvh;
+        width: 880px;
+        max-width: 100vw;
+        border-radius: 0;
+        box-shadow: var(--shadow-2-left);
+      }
+      .dialog-layout {
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100dvh - 40px);
+      }
+      .drawer .dialog-layout {
+        height: 100dvh;
+        max-height: 100dvh;
+      }
+      .dialog-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid var(--gray-4);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex: none;
+      }
+      .dialog-header h2 {
+        font-size: 18px;
+      }
+      .dialog-body {
+        padding: 24px;
+        overflow: auto;
+        min-height: 0;
+        flex: 1;
+      }
+      .dialog-footer {
+        padding: 16px 24px;
+        border-top: 1px solid var(--gray-4);
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        flex: none;
+        background: #fff;
+      }
+      .field {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 20px;
+      }
+      .field > label {
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .field input,
+      .field select,
+      .field textarea {
+        width: 100%;
+      }
+      .field small {
+        color: var(--gray-8);
+      }
+      .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0 16px;
+      }
+      .steps {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 24px;
+      }
+      .steps span {
+        flex: 1;
+        padding: 10px 4px;
+        border-bottom: 2px solid var(--gray-4);
+        font-size: 12px;
+        color: var(--gray-8);
+      }
+      .steps span.active {
+        color: var(--p8);
+        border-color: var(--p6);
+        font-weight: 650;
+      }
+      .policy-quote {
+        background: var(--gray-2);
+        border-left: 3px solid var(--p6);
+        padding: 16px;
+        margin: 20px 0;
+      }
+      .diff {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin: 16px 0;
+      }
+      .diff pre {
+        background: var(--gray-2);
+        padding: 16px;
+        white-space: pre-wrap;
+        font:
+          12px/1.8 ui-monospace,
+          monospace;
+        border-radius: 6px;
+      }
+      .diff .after {
+        background: var(--green-1);
+      }
+      .toast {
+        position: fixed;
+        top: 18px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 20;
+        background: var(--p10);
+        color: white;
+        box-shadow: 0 4px 16px #0002;
+        border-radius: 6px;
+        padding: 10px 20px;
+        max-width: 90vw;
+        font-size: 13px;
+      }
+      .toast[hidden] {
+        display: none;
+      }
+      .spacer {
+        height: 16px;
+      }
+      .inline-check {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        font-size: 13px;
+      }
+      .inline-check input {
+        width: auto;
+      }
+      .flow-callout {
+        background: var(--gray-2);
+        border-radius: 6px;
+        padding: 16px;
+        font-size: 13px;
+        margin-top: 16px;
+      }
+      .role-note {
+        font-size: 12px;
+        margin-top: 12px;
+        color: var(--gray-8);
+      }
+      @media (min-width: 1600px) {
+        .container {
+          padding-left: 40px;
+          padding-right: 40px;
+        }
+        .hero {
+          padding: 36px;
+        }
+        .hero h2 {
+          font-size: 28px;
+        }
+      }
+      @media (max-width: 1100px) {
+        .hero,
+        .two-col {
+          grid-template-columns: 1fr;
+        }
+        .pipeline {
+          padding: 18px;
+        }
+        .two-col > .stack {
+          grid-template-columns: 1fr 1fr;
+        }
+        .split {
+          grid-template-columns: 290px minmax(0, 1fr);
+        }
+        .channel-grid {
+          grid-template-columns: 1fr;
+        }
+        .health-card p {
+          min-height: 0;
+        }
+      }
+      @media (max-width: 767px) {
+        .container {
+          padding: 16px;
+        }
+        .preview-bar {
+          padding: 10px 16px;
+          flex-wrap: wrap;
+        }
+        .heading {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+        .heading > .row {
+          width: 100%;
+        }
+        .nav {
+          gap: 20px;
+          overflow: auto;
+          white-space: nowrap;
+        }
+        .hero {
+          padding: 20px;
+          gap: 20px;
+        }
+        .hero h2 {
+          font-size: 22px;
+        }
+        .hero .between {
+          align-items: flex-start;
+        }
+        .stats {
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+          padding: 16px 0;
+        }
+        .stat:nth-child(2) {
+          border: 0;
+        }
+        .stat .value {
+          font-size: 26px;
+        }
+        .two-col > .stack {
+          grid-template-columns: 1fr;
+        }
+        .panel {
+          padding: 20px;
+        }
+        .split {
+          grid-template-columns: 1fr;
+        }
+        .scenario-list {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+        }
+        .scenario {
+          margin: 0;
+          padding: 12px;
+        }
+        .trace {
+          grid-template-columns: 1fr 1fr;
+        }
+        .channel-grid,
+        .form-grid,
+        .diff {
+          grid-template-columns: 1fr;
+        }
+        .footer {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+        .kv {
+          grid-template-columns: 86px minmax(0, 1fr);
+        }
+        .steps {
+          gap: 4px;
+        }
+        .steps span {
+          font-size: 11px;
+        }
+        .dialog-header,
+        .dialog-body,
+        .dialog-footer {
+          padding: 16px;
+        }
+        .between.section-head {
+          flex-wrap: wrap;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+          scroll-behavior: auto !important;
+        }
+      }
+
+      .journey {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin: 0 0 16px;
+      }
+      .journey > div {
+        border-top: 2px solid var(--p6);
+        padding: 12px 16px;
+        background: white;
+        border-radius: 6px;
+      }
+      .journey b {
+        display: block;
+        font-size: 13px;
+      }
+      .journey p {
+        font-size: 12px;
+        color: var(--gray-8);
+        margin-top: 4px;
+      }
+      .task-banner {
+        background: var(--p10);
+        color: #fff;
+        padding: 20px 24px;
+        border-radius: 8px;
+        margin-bottom: 16px;
+      }
+      .task-banner p {
+        color: #c8e5dc;
+        font-size: 13px;
+        margin-top: 4px;
+      }
+      .task-banner button {
+        flex: none;
+      }
+      .asset-cards {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+      }
+      .asset-cards h3 {
+        font-size: 17px;
+        margin: 12px 0;
+      }
+      .asset-cards .mono {
+        min-height: 44px;
+      }
+      .task-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 16px;
+      }
+      .task-row {
+        padding: 12px 0;
+        border-bottom: 1px solid var(--gray-4);
+      }
+      .request-tools {
+        border: 1px dashed var(--gray-5);
+        border-radius: 6px;
+        padding: 16px;
+        margin: 16px 0;
+      }
+      .request-tools button {
+        font-size: 12px;
+      }
+      .decision-box {
+        border-left: 3px solid var(--blue-6);
+        padding: 12px 16px;
+        background: var(--gray-2);
+        margin-top: 16px;
+      }
+      @media (max-width: 900px) {
+        .asset-cards,
+        .journey {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      @media (max-width: 600px) {
+        .asset-cards,
+        .journey {
+          grid-template-columns: 1fr;
+        }
+        .task-banner {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="preview-bar">
+      <div class="preview-mark">
+        <span class="brand-mark">N</span><strong>NETWORK LENS</strong
+        ><span> / </span><span>交互原型 · 全部为模拟数据</span>
+      </div>
+      <div class="row wrap">
+        <span class="caption">演示环境</span>
+        <div class="switcher" id="os-switch"></div>
+        <div class="switcher" id="persona-switch"></div>
+      </div>
+    </div>
+    <main class="container">
+      <div class="crumb">
+        安全中心 <span aria-hidden="true"> / </span> 文件策略
+      </div>
+      <header class="between heading">
+        <div>
+          <h1>让文件有边界，让工作继续。</h1>
+          <p>谁可以读、谁可以改、什么可以发给 AI，每一次都清楚。</p>
+        </div>
+        <div class="row">
+          <button data-action="export">导出演示报告</button
+          ><button class="primary" data-action="new">＋ 新建文件策略</button>
+        </div>
+      </header>
+      <nav class="nav" aria-label="文件策略页面" id="nav"></nav>
+      <div id="content"></div>
+      <footer class="between footer">
+        <span
+          >本地交互原型 · 不访问真实文件，不修改系统权限 ·
+          状态仅保存在此浏览器</span
+        ><button class="text" data-action="reset">重置演示数据</button>
+      </footer>
+    </main>
+    <dialog id="drawer" class="drawer" aria-labelledby="drawer-title"></dialog>
+    <dialog id="modal" aria-labelledby="modal-title"></dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <script>
+      "use strict";
+      const $ = (s) => document.querySelector(s),
+        escapeHTML = (s) =>
+          String(s ?? "").replace(
+            /[&<>"']/g,
+            (c) =>
+              ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+              })[c],
+          );
+      const key = "network-lens-file-policy-prototype-v2";
+      const copy = (x) => JSON.parse(JSON.stringify(x));
+      const opNames = {
+        read: "读取",
+        write: "修改",
+        delete: "删除",
+        disclose: "发送模型",
+      };
+      const decisions = { allow: "允许", ask: "需确认", deny: "禁止" };
+      const kinds = {
+        allow: ["green", "已允许"],
+        deny: ["red", "已阻止"],
+        ask: ["orange", "待授权"],
+        uncovered: ["orange", "未覆盖"],
+        error: ["red", "执行失败"],
+        action: ["blue", "配置记录"],
+      };
+      const tabs = [
+        ["home", "保护工作台"],
+        ["assets", "文件发现"],
+        ["lab", "任务与验证"],
+        ["audit", "授权与记录"],
+        ["health", "覆盖与健康"],
+      ];
+      let state = { os: "mac", persona: "dev", tab: "home", contexts: {} };
+      try {
+        const saved = JSON.parse(localStorage.getItem(key));
+        if (
+          saved?.contexts &&
+          ["mac", "win"].includes(saved.os) &&
+          ["dev", "office"].includes(saved.persona)
+        )
+          state = saved;
+      } catch {}
+      let draft,
+        step = 0,
+        dirty = false,
+        lastFocus,
+        modalFocus,
+        query = "",
+        filterKind = "all",
+        busy = false,
+        lastResult = null,
+        selectedScenario = "secret",
+        toastTimer;
+      function seed(persona) {
+        return {
+          rev: 1,
+          native: false,
+          gateway: true,
+          hook: true,
+          history: [],
+          events: [],
+          grants: [],
+          rules:
+            persona === "dev"
+              ? [
+                  {
+                    id: "secrets",
+                    name: "密钥与凭据",
+                    file: ".env.production",
+                    type: "KEY",
+                    actor: "AI / 未知应用",
+                    read: "deny",
+                    write: "deny",
+                    delete: "deny",
+                    disclose: "deny",
+                    locked: true,
+                  },
+                  {
+                    id: "source",
+                    name: "项目源码",
+                    file: "src/main.ts",
+                    type: "TS",
+                    actor: "受管 AI",
+                    read: "allow",
+                    write: "allow",
+                    delete: "ask",
+                    disclose: "ask",
+                  },
+                  {
+                    id: "deploy",
+                    name: "发布配置",
+                    file: "deploy/release.yml",
+                    type: "YML",
+                    actor: "受管 AI",
+                    read: "allow",
+                    write: "ask",
+                    delete: "deny",
+                    disclose: "deny",
+                  },
+                ]
+              : [
+                  {
+                    id: "payroll",
+                    name: "薪资与个人信息",
+                    file: "财务/薪资汇总.xlsx",
+                    type: "XLS",
+                    actor: "受管 AI",
+                    read: "allow",
+                    write: "ask",
+                    delete: "deny",
+                    disclose: "ask",
+                  },
+                  {
+                    id: "contract",
+                    name: "客户合同",
+                    file: "合同/服务合同.docx",
+                    type: "DOC",
+                    actor: "受管 AI",
+                    read: "allow",
+                    write: "ask",
+                    delete: "ask",
+                    disclose: "ask",
+                  },
+                  {
+                    id: "office",
+                    name: "可信办公应用",
+                    file: "合同/服务合同.docx",
+                    type: "DOC",
+                    actor: "已验证的办公应用",
+                    read: "allow",
+                    write: "allow",
+                    delete: "ask",
+                    disclose: "ask",
+                  },
+                ],
+        };
+      }
+      function ctx() {
+        const k = state.os + "-" + state.persona;
+        return state.contexts[k] ?? (state.contexts[k] = seed(state.persona));
+      }
+      function persist() {
+        try {
+          localStorage.setItem(key, JSON.stringify(state));
+        } catch {
+          toast("浏览器存储不可用；本次状态保留至关闭页面。");
+        }
+      }
+      function root() {
+        return state.os === "mac"
+          ? state.persona === "dev"
+            ? "~/Projects/atlas"
+            : "~/Documents/业务资料"
+          : state.persona === "dev"
+            ? "C:\\Projects\\atlas"
+            : "C:\\Users\\Demo\\Documents\\业务资料";
+      }
+      function pathFor(file) {
+        return (
+          root() +
+          (state.os === "mac" ? "/" : "\\") +
+          (state.os === "mac" ? file : file.replaceAll("/", "\\"))
+        );
+      }
+      function platform() {
+        return state.os === "mac" ? "macOS" : "Windows";
+      }
+      function nativeName() {
+        return state.os === "mac" ? "Endpoint Security" : "Minifilter";
+      }
+      function badge(text, kind = "") {
+        return `<span class="badge ${kind}"><span class="dot"></span>${escapeHTML(text)}</span>`;
+      }
+      function actionButton(label, action, value = "", cls = "") {
+        return `<button class="${cls}" data-action="${action}" data-value="${escapeHTML(value)}">${escapeHTML(label)}</button>`;
+      }
+      function label(d) {
+        return `<span class="action-label ${d}">${decisions[d]}</span>`;
+      }
+      function time(t) {
+        return new Intl.DateTimeFormat("sv-SE", {
+          timeZone: "Asia/Shanghai",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        }).format(new Date(t));
+      }
+      function toast(message) {
+        clearTimeout(toastTimer);
+        $("#toast").textContent = message;
+        $("#toast").hidden = false;
+        toastTimer = setTimeout(() => ($("#toast").hidden = true), 3000);
+      }
+      function log(event) {
+        const e = {
+          id: "DEMO-" + crypto.randomUUID().slice(0, 8),
+          at: Date.now(),
+          rev: ctx().rev,
+          os: state.os,
+          persona: state.persona,
+          ...event,
+        };
+        ctx().events.unshift(e);
+        persist();
+        return e;
+      }
+      function expire() {
+        let changed = false;
+        for (const g of ctx().grants)
+          if (g.status === "active" && g.expiresAt <= Date.now()) {
+            g.status = "expired";
+            changed = true;
+            log({
+              kind: "action",
+              title: "临时授权已到期",
+              file: g.file,
+              reason: "原策略恢复；到期后重试需要重新授权。",
+            });
+          }
+        return changed;
+      }
+      function scenariosBase() {
+        const base =
+          state.persona === "dev"
+            ? [
+                {
+                  id: "source",
+                  title: "AI 读取项目源码",
+                  subtitle: "正常任务应该顺畅继续",
+                  rule: "source",
+                  actor: "受管 AI",
+                  op: "read",
+                  channel: "hook",
+                  dest: "本地上下文",
+                },
+                {
+                  id: "secret",
+                  title: "AI 尝试读取生产密钥",
+                  subtitle: "拒绝暴露凭据，并解释命中原因",
+                  rule: "secrets",
+                  actor: "AI / 未知应用",
+                  op: "read",
+                  channel: "hook",
+                  dest: "本地上下文",
+                },
+                {
+                  id: "edit",
+                  title: "AI 修改发布配置",
+                  subtitle: "必要操作，只授权这一次",
+                  rule: "deploy",
+                  actor: "受管 AI",
+                  op: "write",
+                  channel: "hook",
+                  dest: "原文件",
+                },
+                {
+                  id: "terminal",
+                  title: "未知终端直接读取密钥",
+                  subtitle: "查看系统增强补上的覆盖",
+                  rule: "secrets",
+                  actor: "未知终端",
+                  op: "read",
+                  channel: "native",
+                  dest: "本地终端",
+                },
+              ]
+            : [
+                {
+                  id: "office",
+                  title: "Excel 正常编辑合同",
+                  subtitle: "可信办公应用的日常操作",
+                  rule: "office",
+                  actor: "已验证的办公应用",
+                  op: "write",
+                  channel: "native",
+                  dest: "原文件",
+                },
+                {
+                  id: "payroll",
+                  title: "AI 发送薪资汇总",
+                  subtitle: "先脱敏，再完成数据分析",
+                  rule: "payroll",
+                  actor: "受管 AI",
+                  op: "disclose",
+                  channel: "gateway",
+                  dest: "外部模型 · model.example",
+                },
+                {
+                  id: "contract",
+                  title: "AI 发送客户合同",
+                  subtitle: "精确到文件、目标和一次提交",
+                  rule: "contract",
+                  actor: "受管 AI",
+                  op: "disclose",
+                  channel: "gateway",
+                  dest: "外部模型 · model.example",
+                },
+                {
+                  id: "delete",
+                  title: "AI 删除客户合同",
+                  subtitle: "高风险操作独立确认",
+                  rule: "contract",
+                  actor: "受管 AI",
+                  op: "delete",
+                  channel: "hook",
+                  dest: "原文件",
+                },
+              ];
+        return [
+          ...base,
+          ...ctx()
+            .rules.filter((r) => r.id.startsWith("custom-"))
+            .flatMap((r) =>
+              Object.entries(opNames).map(([op, n]) => ({
+                id: r.id + "-" + op,
+                title: r.name + " · " + n,
+                subtitle: "验证新发布的自定义策略",
+                rule: r.id,
+                actor: r.actor,
+                op,
+                channel: op === "disclose" ? "gateway" : "hook",
+                dest:
+                  op === "disclose" ? "外部模型 · model.example" : "本地文件",
+              })),
+            ),
+        ];
+      }
+      function scene() {
+        return (
+          scenarios().find((s) => s.id === selectedScenario) || scenarios()[0]
+        );
+      }
+      function ruleFor(s) {
+        return ctx().rules.find((r) => r.id === s.rule);
+      }
+      function coverageName(c) {
+        return {
+          hook: "受管 AI 操作关口",
+          gateway: "模型提交关口",
+          native: platform() + " 系统文件保护",
+        }[c];
+      }
+      function evaluate(s) {
+        const c = ctx(),
+          r = ruleFor(s);
+        if (!c[s.channel])
+          return {
+            kind: "uncovered",
+            reason:
+              coverageName(s.channel) + "当前未就绪，无法证实此操作被阻断。",
+          };
+        const d = r[s.op];
+        if (d === "ask") {
+          const grant = c.grants.find(
+            (g) =>
+              g.status === "active" &&
+              g.expiresAt > Date.now() &&
+              g.scenario === s.id &&
+              g.rev === c.rev &&
+              g.file === r.file &&
+              g.actor === s.actor &&
+              g.dest === s.dest &&
+              g.fingerprint === fingerprint(s),
+          );
+          if (grant)
+            return {
+              kind: "allow",
+              grant,
+              reason: "精确匹配单次授权；本次重试后许可即被消费。",
+            };
+        }
+        return {
+          kind: d,
+          reason:
+            d === "deny"
+              ? `命中「${r.name}」：${opNames[s.op]}被禁止。`
+              : d === "ask"
+                ? `命中「${r.name}」：${opNames[s.op]}需要单独确认，本次操作尚未执行。`
+                : `命中「${r.name}」：该主体可以${opNames[s.op]}，其他权限保持独立。`,
+        };
+      }
+      function render() {
+        expire();
+        $("#os-switch").innerHTML = [
+          ["mac", "macOS"],
+          ["win", "Windows"],
+        ]
+          .map(
+            ([id, n]) =>
+              `<button data-action="os" data-value="${id}" aria-pressed="${state.os === id}" class="${state.os === id ? "selected" : ""}">${n}</button>`,
+          )
+          .join("");
+        $("#persona-switch").innerHTML = [
+          ["dev", "开发人员"],
+          ["office", "日常办公"],
+        ]
+          .map(
+            ([id, n]) =>
+              `<button data-action="persona" data-value="${id}" aria-pressed="${state.persona === id}" class="${state.persona === id ? "selected" : ""}">${n}</button>`,
+          )
+          .join("");
+        $("#nav").innerHTML = tabs
+          .map(
+            ([id, n]) =>
+              `<button data-action="tab" data-value="${id}" aria-current="${state.tab === id ? "page" : "false"}" class="${state.tab === id ? "active" : ""}">${n}</button>`,
+          )
+          .join("");
+        $("#content").innerHTML = (
+          {
+            home: home,
+            lab: lab,
+            audit: audit,
+            health: health,
+            assets: assets,
+          }[state.tab] || home
+        )();
+        persist();
+      }
+      function homeBase() {
+        const c = ctx(),
+          blocked = c.events.filter((e) => e.kind === "deny").length,
+          active = c.grants.filter((g) => g.status === "active").length;
+        return `
+<section class="hero"><div><div class="eyebrow">FILE GUARD / ${state.persona === "dev" ? "DEVELOPER" : "WORKSPACE"}</div><div class="row wrap">${badge(c.native && c.hook && c.gateway ? "所选通道已就绪 · 模拟" : "部分覆盖 · 模拟", c.native && c.hook && c.gateway ? "green" : "orange")}<span class="caption">策略 v${c.rev} · ${platform()}</span></div><h2>${state.persona === "dev" ? "让 AI 专注写代码，<br>把生产密钥留在边界内。" : "合同照常编辑，<br>敏感信息出门前再确认。"}</h2><p>${state.persona === "dev" ? "源码可以读写，发布配置需要确认，凭据默认禁止访问。规则按具体任务执行，保留每一步的判定依据。" : "区分日常编辑与模型外发；先预览脱敏副本，再授权明确的一次提交，保留原文件和完整操作记录。"}</p><div class="row hero-actions">${actionButton("体验一次保护", "tab", "lab", "primary")}${actionButton("查看实际覆盖", "tab", "health")}</div></div><div class="pipeline" aria-label="文件经过策略判断后进入工作流程"><div class="pipe-node"><div class="pipe-icon">${state.persona === "dev" ? "{ }" : "Aa"}</div><strong>${state.persona === "dev" ? "项目与凭据" : "业务文档"}</strong><div class="caption">范围内文件</div></div><div class="pipe-arrow">→</div><div class="pipe-node center"><div class="pipe-icon">✓</div><strong>文件策略</strong><div class="caption">主体 · 操作 · 去向</div></div><div class="pipe-arrow">→</div><div class="pipe-node"><div class="pipe-icon">AI</div><strong>继续工作</strong><div class="caption">按需允许 / 确认</div></div></div></section>
+<section class="stats" aria-label="当前演示环境统计"><div class="stat"><div class="muted small">已配置策略</div><div class="value">${c.rules.length}<span>条</span></div></div><div class="stat"><div class="muted small">就绪执行通道</div><div class="value">${[c.native, c.hook, c.gateway].filter(Boolean).length}<span>/ 3 项选定通道</span></div></div><div class="stat"><div class="muted small">本轮模拟阻止</div><div class="value">${blocked}<span>次</span></div></div><div class="stat"><div class="muted small">待使用临时授权</div><div class="value">${active}<span>项</span></div></div></section>
+<div class="two-col"><section class="panel"><div class="between section-head"><div><h2>保护范围与权限</h2><p class="mono muted">${escapeHTML(root())}</p></div>${actionButton("新建策略", "new", "", "text")}</div><div class="notice info">${state.persona === "dev" ? "读取、修改、删除、发送模型分别授权。允许读取不代表允许外发。" : "日常编辑与 AI 外发使用独立规则；办公应用操作需系统增强通道支持。"}</div><div class="spacer"></div>${rulesTable()}<div class="table-footer">策略配置示例 · 点击详情查看作用主体与覆盖</div><div class="flow-callout"><strong>发布前先验证</strong><p class="muted small">新规则先试运行，确认影响范围后发布。发布失败保留原版本，回滚也会留下审计记录。</p><div class="spacer"></div>${actionButton("创建并试运行", "new")}${c.history.length ? actionButton("回滚上一版", "rollback", "", "text") : ""}</div></section><aside class="stack"><section class="panel"><div class="between section-head"><h2>哪些通道正在保护</h2>${actionButton("管理", "tab", "health", "text")}</div>${channelMini("hook", "AI", "受管 AI 操作", "只覆盖已接入的文件操作与会话")}${channelMini("gateway", "OUT", "模型提交关口", "只检查经过本关口的最终请求")}${channelMini("native", "OS", platform() + " 系统增强", c.native ? "所选本地文件场景已模拟验证" : "未就绪：其他应用直接访问未覆盖")}</section><section class="panel"><div class="between section-head"><h2>最近的保护记录</h2>${actionButton("全部", "tab", "audit", "text")}</div>${
+          c.events
+            .slice(0, 2)
+            .map(
+              (e) =>
+                `<div class="mini-event"><span class="event-line ${kinds[e.kind][0]}"></span><div><strong>${escapeHTML(e.title)}</strong><p>${escapeHTML(time(e.at))} · 模拟</p>${actionButton("查看依据", "event", e.id, "text")}</div></div>`,
+            )
+            .join("") ||
+          '<div class="muted small">还没有演示记录。运行一个场景，看看规则如何决定。</div>'
+        }</section></aside></div>`;
+      }
+      function channelMini(key, abbr, title, desc) {
+        return `<div class="cover-item"><div class="channel-icon">${abbr}</div><div><strong>${title}</strong><p>${desc}</p>${badge(ctx()[key] ? "已就绪 · 模拟" : "未就绪", ctx()[key] ? "green" : "orange")}</div></div>`;
+      }
+      function rulesTable() {
+        return `<div class="table-scroll"><table><thead><tr><th>规则 / 文件类型</th><th>读取</th><th>修改</th><th>删除</th><th>发送模型</th><th>操作</th></tr></thead><tbody>${ctx()
+          .rules.map(
+            (r) =>
+              `<tr><td><span class="asset-type">${escapeHTML(r.type)}</span>${escapeHTML(r.name)}</td>${["read", "write", "delete", "disclose"].map((op) => `<td>${label(r[op])}</td>`).join("")}<td>${actionButton("详情", "rule", r.id, "text")}</td></tr>`,
+          )
+          .join("")}</tbody></table></div>`;
+      }
+      function labBase() {
+        const s = scene(),
+          r = ruleFor(s);
+        return `<div class="between section-head"><div><h2>一次操作，一条完整的证据链</h2><p class="muted">选择场景，观察主体、文件、动作与去向如何共同影响结果。</p></div>${badge("演示动作 · 不执行真实访问", "blue")}</div><div class="split"><section class="panel"><h3>选择${state.persona === "dev" ? "开发" : "办公"}场景</h3><div class="spacer"></div><div class="scenario-list">${scenarios()
+          .map(
+            (x, i) =>
+              `<button class="scenario ${x.id === s.id ? "active" : ""}" data-action="scenario" data-value="${x.id}" aria-pressed="${x.id === s.id}"><span class="num">SCENARIO 0${i + 1}</span><strong>${escapeHTML(x.title)}</strong><p>${x.subtitle}</p></button>`,
+          )
+          .join(
+            "",
+          )}</div><div class="role-note">这里的“已阻止”指模拟结果。真实接入必须取得执行端回执。</div></section><section class="panel"><div class="between"><h2>${escapeHTML(s.title)}</h2>${badge("策略 v" + ctx().rev)}</div><div class="lab-request"><dl class="kv"><dt>发起主体</dt><dd>${s.actor} · 身份已模拟校验</dd><dt>目标文件</dt><dd class="mono">${escapeHTML(pathFor(r.file))}</dd><dt>操作 / 去向</dt><dd>${opNames[s.op]} → ${s.dest}</dd><dt>执行通道</dt><dd>${coverageName(s.channel)} · ${ctx()[s.channel] ? "已就绪" : "未覆盖"}</dd></dl></div><div class="row">${actionButton("运行此场景", "run", "", "primary")}${actionButton("查看命中策略", "rule", r.id, "text")}</div>${lastResult ? resultPanel(lastResult) : '<div class="empty">运行后将在这里显示判定与执行回执。<br><span class="small">每次演示都保留独立记录，便于比较授权前后的变化。</span></div>'}</section></div>`;
+      }
+      function resultPanelBase(e) {
+        const [color, title] = kinds[e.kind];
+        return `<section class="result" aria-live="polite">${badge(title + " · 模拟", color)}<h3>${e.kind === "deny" ? "这次访问停在了文件边界。" : e.kind === "ask" ? "这次操作需要你单独授权。" : e.kind === "uncovered" ? "这个通道尚未纳入保护。" : "操作已按限定权限完成模拟。"}</h3><p class="muted">${escapeHTML(e.reason)}</p><div class="trace"><div class="trace-step"><b>01 识别请求</b><span>${escapeHTML(e.actor || "当前用户")}</span></div><div class="trace-step"><b>02 确认范围</b><span>${escapeHTML(e.file || "策略配置")}</span></div><div class="trace-step"><b>03 策略判定</b><span>v${e.rev} · ${escapeHTML(e.ruleName || "能力检查")}</span></div><div class="trace-step"><b>04 执行回执</b><span>${e.kind === "uncovered" ? "不可验证" : e.kind === "ask" ? "未执行，等待重试" : title + "（模拟）"}</span></div></div><div class="row wrap">${e.kind === "ask" ? actionButton("仅授权一次", "grant", e.id, "primary") : ""}${e.kind === "ask" && e.scenario === "payroll" ? actionButton("预览脱敏副本", "redact", e.id) : ""}${e.kind === "uncovered" ? actionButton("前往接入", "tab", "health", "primary") : ""}${actionButton("查看完整记录", "event", e.id, "text")}</div></section>`;
+      }
+      function audit() {
+        const c = ctx(),
+          rows = c.events.filter(
+            (e) =>
+              (filterKind === "all" || e.kind === filterKind) &&
+              [e.title, e.file, e.reason, e.id]
+                .join(" ")
+                .toLowerCase()
+                .includes(query.toLowerCase()),
+          );
+        return `<div class="two-col"><section class="panel"><div class="between section-head"><div><h2>操作记录</h2><p class="muted small">当前 ${platform()} / ${state.persona === "dev" ? "开发" : "办公"} 演示环境 · 时间：北京时间</p></div>${actionButton("导出演示报告", "export")}</div><form class="filter" id="search-form"><input name="q" aria-label="搜索事件" placeholder="搜索文件、原因或事件编号" value="${escapeHTML(query)}"><select name="kind" aria-label="结果筛选">${[
+          ["all", "全部结果"],
+          ["deny", "已阻止"],
+          ["ask", "待授权"],
+          ["allow", "已允许"],
+          ["uncovered", "未覆盖"],
+          ["error", "执行失败"],
+          ["action", "配置记录"],
+        ]
+          .map(
+            ([v, n]) =>
+              `<option value="${v}" ${v === filterKind ? "selected" : ""}>${n}</option>`,
+          )
+          .join(
+            "",
+          )}</select><button type="submit">搜索</button><button type="button" data-action="clear-search">清空</button></form><div class="table-scroll"><table><thead><tr><th>操作</th><th>结果</th><th>时间</th><th>版本</th><th>详情</th></tr></thead><tbody>${rows.map((e) => `<tr><td>${escapeHTML(e.title)}</td><td>${badge(kinds[e.kind][1], kinds[e.kind][0])}</td><td>${time(e.at)}</td><td>v${e.rev}</td><td>${actionButton("查看", "event", e.id, "text")}</td></tr>`).join("") || '<tr><td colspan="5"><div class="empty">暂无匹配数据，请调整筛选条件<br>或前往“场景验证”生成演示记录。</div></td></tr>'}</tbody></table></div>${rows.length ? `<div class="table-footer">共计 ${rows.length} 条 · 演示数据一次展示，表格内部滚动</div>` : ""}<div class="spacer"></div><div class="notice info">配置操作与场景执行分别标注。未覆盖事件不算拦截，也不代表文件已被访问。</div></section><aside class="panel"><div class="between section-head"><h2>临时授权</h2>${badge(c.grants.filter((g) => g.status === "active").length + " 项可用", "blue")}</div><p class="muted small">绑定文件版本、主体、动作、目标和策略版本。默认 1 次 / 15 分钟。</p>${c.grants.map((g) => `<div class="grant-item"><h3>${escapeHTML(g.title)}</h3><p class="mono muted">${escapeHTML(g.file)}</p><p class="small muted">${escapeHTML(g.dest)} · v${g.rev}</p><div class="spacer"></div>${badge({ active: "待使用", used: "已使用", expired: "已到期", revoked: "已撤销", invalid: "条件变化失效" }[g.status], g.status === "active" ? "orange" : "")}<p class="caption">有效至 ${time(g.expiresAt)}</p>${g.status === "active" ? `<div class="row">${actionButton("撤销", "revoke", g.id, "text")}${actionButton("模拟到期", "expire", g.id, "text")}</div>` : ""}</div>`).join("") || '<div class="empty">暂无临时授权<br><span class="small">运行“需要确认”的场景后申请。</span></div>'}</aside></div>`;
+      }
+      function health() {
+        const c = ctx();
+        return `<div class="between section-head"><div><h2>保护能力，逐项核验</h2><p class="muted">规则已保存、执行端已接收、实际验证通过，是三个不同状态。</p></div>${badge("当前版本 v" + c.rev, "blue")}</div><div class="notice">当前为模拟能力面板。此处操作不会安装系统组件或更改隐私权限。</div><div class="spacer"></div><div class="channel-grid">${[
+          [
+            "hook",
+            "01",
+            "受管 AI 操作",
+            "接入支持的文件工具与执行前 Hook。第三方 MCP、任意脚本及已有会话需要分别核验。",
+          ],
+          [
+            "gateway",
+            "02",
+            "模型提交关口",
+            "在请求发出前检查最终正文、附件和目的地。未经过关口的直连流量不在覆盖范围。",
+          ],
+          [
+            "native",
+            "03",
+            platform() + " 系统增强",
+            state.os === "mac"
+              ? "通过 Endpoint Security 扩展处理支持的文件授权事件；需要系统批准与完整磁盘访问权限。"
+              : "通过签名 Minifilter 与本地服务控制支持的文件 I/O；需要管理员安装及驱动兼容验证。",
+          ],
+        ]
+          .map(
+            ([k, n, title, desc]) =>
+              `<section class="panel health-card"><div class="eyebrow">PROTECTION LAYER ${n}</div><h3>${title}</h3><p>${desc}</p>${badge(c[k] ? "已就绪 · 模拟验证通过" : "未就绪 · 相关操作未覆盖", c[k] ? "green" : "orange")}<dl class="kv"><dt>策略接收</dt><dd>${c[k] ? "v" + c.rev : "未确认"}</dd><dt>运行验证</dt><dd>${c[k] ? "示例探针通过" : "未通过 / 未运行"}</dd><dt>失效影响</dt><dd>${k === "native" ? "其他应用直接文件访问" : k === "gateway" ? "模型提交检查" : "受管 AI 文件操作"}</dd></dl>${c[k] ? actionButton("模拟权限失效", "lose", k) : actionButton(k === "native" ? "查看接入步骤" : "模拟恢复并验证", "connect", k, "primary")}</section>`,
+          )
+          .join(
+            "",
+          )}</div><div class="spacer"></div><section class="panel"><h2>当前保护边界</h2><div class="table-scroll"><table><thead><tr><th>访问方式</th><th>可验证内容</th><th>本原型范围</th></tr></thead><tbody><tr><td>受管 AI / 受管提交</td><td>操作决策 / 最终请求判定</td><td>示例决策与状态交互</td></tr><tr><td>系统增强</td><td>支持的本地文件授权事件</td><td>能力与回执模拟</td></tr><tr><td>WSL / 容器 / 远程 / 网络卷</td><td>需在实际执行环境独立部署</td><td>${badge("未覆盖", "orange")}</td></tr><tr><td>任意浏览器 / 剪贴板 / 截图 / 打印</td><td>需专门通道；文件读取不等于外发</td><td>${badge("未覆盖", "orange")}</td></tr></tbody></table></div><p class="caption" style="margin-top:16px">Windows CFA 主要限制修改；macOS FDA 是访问资格。两者都不能单独完成按模型目的地的外发控制。</p></section>`;
+      }
+      function openDrawer(title, body, footer = "") {
+        if (!$("#drawer").open) lastFocus = document.activeElement;
+        $("#drawer").innerHTML =
+          `<div class="dialog-layout"><div class="dialog-header"><h2 id="drawer-title">${escapeHTML(title)}</h2>${actionButton("关闭", "close-drawer")}</div><div class="dialog-body">${body}</div>${footer ? `<div class="dialog-footer">${footer}</div>` : ""}</div>`;
+        if (!$("#drawer").open) $("#drawer").showModal();
+      }
+      function modal(title, body, footer) {
+        modalFocus = document.activeElement;
+        $("#modal").innerHTML =
+          `<div class="dialog-layout"><div class="dialog-header"><h2 id="modal-title">${escapeHTML(title)}</h2>${actionButton("关闭", "close-modal")}</div><div class="dialog-body">${body}</div><div class="dialog-footer">${footer || actionButton("知道了", "close-modal")}</div></div>`;
+        if (!$("#modal").open) $("#modal").showModal();
+      }
+      function closeModal() {
+        $("#modal").close();
+        modalFocus?.isConnected && modalFocus.focus();
+      }
+      function closeDrawer(force = false) {
+        if (dirty && !force) {
+          modal(
+            "放弃未发布的修改？",
+            "<p>关闭后将丢弃本次草稿，已生效策略保持不变。</p>",
+            actionButton("继续编辑", "close-modal") +
+              actionButton("放弃修改", "discard", "", "primary"),
+          );
+          return;
+        }
+        $("#drawer").close();
+        dirty = false;
+        draft = undefined;
+        lastFocus?.isConnected && lastFocus.focus();
+      }
+      function confirmAction(title, body, action, value = "") {
+        modal(
+          title,
+          body,
+          actionButton("取消", "close-modal") +
+            actionButton("确认", "confirm-" + action, value, "primary"),
+        );
+      }
+      function showRule(id) {
+        const r = ctx().rules.find((r) => r.id === id);
+        openDrawer(
+          r.name,
+          `${badge("策略 v" + ctx().rev, "blue")}<div class="policy-quote"><strong>当 ${escapeHTML(r.actor)} 访问这些文件时</strong><p class="mono">${escapeHTML(pathFor(r.file))}</p></div><dl class="kv"><dt>文件身份</dt><dd>演示对象 · 样本版本 v${resourceVersion(r.file)}</dd><dt>匹配范围</dt><dd>${r.id === "secrets" ? "凭据分类模板；此处用 .env.production 演示" : "示例文件路径"}</dd><dt>优先级</dt><dd>${r.locked ? "锁定禁止，不能使用临时授权覆盖" : "同范围拒绝优先；单次许可只满足“需确认”"}</dd></dl><div class="spacer"></div><div class="table-scroll"><table><thead><tr><th>操作</th><th>决定</th></tr></thead><tbody>${Object.entries(
+            opNames,
+          )
+            .map(
+              ([op, name]) =>
+                `<tr><td>${name}</td><td>${label(r[op])}</td></tr>`,
+            )
+            .join(
+              "",
+            )}</tbody></table></div><div class="spacer"></div><div class="notice info">本地允许读取不等于允许发送模型。外发检查仅对受管模型提交通道有效。</div><div class="spacer"></div><h3>为什么会这样设置</h3><p class="muted">${r.locked ? "凭据一旦泄漏无法通过回滚文件消除影响。推荐让 AI 使用不含秘密的样例配置。" : "在保证日常工作连续性的同时，把删除、敏感修改和外发作为独立授权动作。"}</p>`,
+        );
+      }
+      function showEvent(id) {
+        const e = ctx().events.find((e) => e.id === id);
+        if (!e) return;
+        openDrawer(
+          "操作依据与执行回执",
+          `${badge(kinds[e.kind][1] + " · 模拟", kinds[e.kind][0])}<div class="spacer"></div><h2>${escapeHTML(e.title)}</h2><p class="muted">${escapeHTML(e.reason)}</p><div class="spacer"></div><dl class="kv"><dt>关联 ID</dt><dd class="mono">${e.id}</dd><dt>时间</dt><dd>${time(e.at)}（北京时间）</dd><dt>主体</dt><dd>${escapeHTML(e.actor || "当前用户 · 演示角色")}</dd><dt>文件</dt><dd class="mono">${escapeHTML(e.file || "本地策略配置")}</dd><dt>操作 / 去向</dt><dd>${escapeHTML((opNames[e.op] || "配置管理") + " / " + (e.dest || "本地"))}</dd><dt>命中策略</dt><dd>${escapeHTML(e.ruleName || "能力与配置检查")} · v${e.rev}</dd><dt>执行回执</dt><dd>${e.receipt === "failed" ? "规则允许，执行失败；任务未完成" : e.kind === "uncovered" ? "没有执行端回执；结果未知" : e.kind === "ask" ? "操作未执行；授权后需重试" : "演示回执；非真实系统证据"}</dd><dt>后续处理</dt><dd>${
+            ctx()
+              .events.filter((x) => x.sourceEventId === e.id)
+              .map((x) => actionButton(x.title, "event", x.id, "text"))
+              .join("") || "暂无关联后续动作"
+          }${e.sourceEventId ? actionButton("查看原始请求", "event", e.sourceEventId, "text") : ""}</dd><dt>证据来源</dt><dd>交互模拟器 · 不计入真实风险统计</dd></dl><div class="spacer"></div><div class="notice">日志只展示示例路径与操作元数据，不包含真实凭据或文档正文。</div><div class="spacer"></div>${e.kind === "ask" ? actionButton("仅授权一次", "grant", e.id, "primary") : ""}`,
+        );
+      }
+      async function runScenario() {
+        if (busy) return;
+        expire();
+        const s = scene(),
+          r = ruleFor(s),
+          context = ctx();
+        busy = true;
+        const b = $('[data-action="run"]');
+        b.disabled = true;
+        b.textContent = "正在校验身份与策略…";
+        await new Promise((resolve) => setTimeout(resolve, 450));
+        const result = evaluate(s);
+        const failed = result.kind === "allow" && ctx().failNext;
+        if (result.kind === "allow") ctx().failNext = false;
+        if (result.grant) result.grant.status = "used";
+        const e = log({
+          kind: failed ? "error" : result.kind,
+          decision: result.kind,
+          fingerprint: fingerprint(s),
+          resourceVersion: resourceVersion(r.file),
+          receipt: failed
+            ? "failed"
+            : result.kind === "allow"
+              ? "completed"
+              : "not_executed",
+          title: s.title,
+          scenario: s.id,
+          file: r.file,
+          actor: s.actor,
+          op: s.op,
+          dest: s.dest,
+          channel: s.channel,
+          ruleName: r.name,
+          reason: failed
+            ? "规则已允许，但模拟执行端返回失败；未确认任务完成。许可不自动返还，敏感操作需重新授权。"
+            : result.reason,
+          grantId: result.grant?.id,
+          sourceEventId: result.grant?.sourceEventId,
+        });
+        lastResult = e;
+        busy = false;
+        render();
+      }
+      function grantForm(id) {
+        const e = ctx().events.find((x) => x.id === id);
+        if (!e || e.kind !== "ask") return;
+        const s = scenarios().find((x) => x.id === e.scenario);
+        if (
+          e.rev !== ctx().rev ||
+          !s ||
+          ruleFor(s)[s.op] !== "ask" ||
+          e.fingerprint !== fingerprint(s)
+        ) {
+          toast("策略已经变化，请重新运行场景。");
+          return;
+        }
+        modal(
+          "仅授权这一次操作",
+          `<div class="notice">授权不会立即执行。返回场景重试后消耗一次；再次操作需要重新确认。</div><div class="spacer"></div><dl class="kv"><dt>主体</dt><dd>${e.actor}</dd><dt>文件 / 版本</dt><dd>${escapeHTML(e.file)} · 样本 v${e.resourceVersion || 1}</dd><dt>动作 / 去向</dt><dd>${opNames[e.op]} / ${e.dest}</dd><dt>有效范围</dt><dd>1 次 · 15 分钟 · 策略 v${e.rev}</dd></dl><div class="spacer"></div><div class="field"><label for="grant-reason">授权原因（必填）</label><textarea id="grant-reason" maxlength="200" placeholder="例如：本次验证已确认需要的变更范围"></textarea><small id="grant-error" role="alert"></small></div>`,
+          actionButton("取消", "close-modal") +
+            actionButton("确认单次授权", "save-grant", e.id, "primary"),
+        );
+      }
+      function saveGrant(id) {
+        const reason = $("#grant-reason").value.trim();
+        if (!reason) {
+          $("#grant-error").textContent = "请填写授权原因。";
+          $("#grant-reason").focus();
+          return;
+        }
+        const e = ctx().events.find((x) => x.id === id);
+        const current = scenarios().find((s) => s.id === e.scenario);
+        if (
+          e.rev !== ctx().rev ||
+          !current ||
+          e.fingerprint !== fingerprint(current)
+        ) {
+          toast("文件、目标或策略已变化，请重新验证。");
+          return;
+        }
+        for (const g of ctx().grants)
+          if (g.status === "active" && g.scenario === e.scenario)
+            g.status = "revoked";
+        ctx().grants.unshift({
+          id: crypto.randomUUID(),
+          title: e.title,
+          file: e.file,
+          actor: e.actor,
+          op: e.op,
+          dest: e.dest,
+          scenario: e.scenario,
+          rev: e.rev,
+          sourceEventId: e.id,
+          fingerprint: e.fingerprint,
+          expiresAt: Date.now() + 15 * 60 * 1000,
+          status: "active",
+          reason,
+        });
+        log({
+          kind: "action",
+          title: "创建单次授权",
+          sourceEventId: e.id,
+          file: e.file,
+          reason: "绑定当前文件、主体、去向与策略版本；15 分钟内仅一次。",
+        });
+        closeModal();
+        closeDrawer(true);
+        selectedScenario = e.scenario;
+        state.tab = "lab";
+        lastResult = null;
+        render();
+        toast("授权已创建；点击“运行此场景”重试。");
+      }
+      function redact(id) {
+        const e = ctx().events.find((x) => x.id === id);
+        if (!e || e.fingerprint !== fingerprint(scene())) {
+          toast("请求已变化，请重新运行。");
+          return;
+        }
+        redactionPreview = { eventId: id, fingerprint: e.fingerprint };
+        modal(
+          "预览脱敏副本",
+          `<p class="muted">示例文档：薪资汇总.xlsx。只提交副本，原件保持不变。</p><div class="diff"><div><h3>原始示例</h3><pre>姓名：演示员工甲\n账号：DEMO-001\n工资：12,000\n部门：产品部</pre></div><div><h3>准备提交的副本</h3><pre class="after">姓名：员工 A\n账号：[已移除]\n工资：12,000\n部门：产品部</pre></div></div><div class="notice">工资、部门仍被保留。示例已移除姓名与账号，不能保证不存在其他敏感信息；请确认目的地和内容。</div><div class="spacer"></div><label class="inline-check"><input type="checkbox" id="redact-check">我已确认该副本可用于本次分析</label><p class="caption">目标：${escapeHTML(e.dest)}（虚构地址）· 源文件 v${e.resourceVersion || 1} · 副本版本：demo-redacted-v1</p>`,
+          actionButton("取消", "close-modal") +
+            actionButton("确认并模拟提交副本", "send-redacted", id, "primary"),
+        );
+      }
+      function newPolicy() {
+        draft = {
+          baseRevision: ctx().rev,
+          name: "",
+          file: "",
+          actor: "受管 AI",
+          read: "allow",
+          write: "ask",
+          delete: "deny",
+          disclose: "ask",
+          channel: "hook",
+          checked: false,
+          fail: false,
+        };
+        step = 0;
+        dirty = false;
+        wizard();
+      }
+      function wizard() {
+        let body = `<div class="steps">${["选择保护范围", "设置操作权限", "试运行检查", "确认并发布"].map((n, i) => `<span class="${i === step ? "active" : ""}">${i + 1} ${n}</span>`).join("")}</div>`;
+        if (step === 0)
+          body += `<div class="notice info">使用${state.persona === "dev" ? "开发" : "办公"}模板创建一条示例文件策略。本原型不会打开本地目录。</div><div class="spacer"></div><div class="field"><label for="policy-name">策略名称（必填）</label><input id="policy-name" data-draft="name" value="${escapeHTML(draft.name)}" maxlength="50" placeholder="例如：保护项目配置"><small>为这组权限起一个清楚的名称。</small></div><div class="field"><label for="policy-file">范围内相对路径（必填）</label><input id="policy-file" data-draft="file" value="${escapeHTML(draft.file)}" maxlength="180" placeholder="${state.persona === "dev" ? "config/settings.json" : "合同/报价明细.xlsx"}"><small>保护根目录：${escapeHTML(root())}；演示支持单一文件，不支持通配符与路径上跳。</small></div><p id="wizard-error" class="notice error" hidden role="alert"></p>`;
+        if (step === 1)
+          body += `<div class="field"><label>作用主体</label><input value="受管 AI · 当前演示会话" readonly></div><div class="form-grid">${Object.entries(
+            opNames,
+          )
+            .map(
+              ([op, n]) =>
+                `<div class="field"><label for="op-${op}">${n}</label><select id="op-${op}" data-draft="${op}">${Object.entries(
+                  decisions,
+                )
+                  .map(
+                    ([v, t]) =>
+                      `<option value="${v}" ${draft[op] === v ? "selected" : ""}>${t}</option>`,
+                  )
+                  .join("")}</select></div>`,
+            )
+            .join(
+              "",
+            )}</div><div class="notice">操作权限彼此独立。发送模型只在受管提交关口执行；其他应用需系统增强支持。</div>`;
+        if (step === 2)
+          body += `<h3>用这条规则检查四种动作</h3><p class="muted">样本：${escapeHTML(draft.file)}。这是一组确定性示例，不代表全机误报率。</p><div class="spacer"></div>${actionButton(draft.checked ? "重新试运行" : "开始试运行", "dryrun", "", "primary")}<div id="dryrun-output">${draft.checked ? dryrunOutput() : '<div class="empty">运行后显示各动作的判定与覆盖缺口。</div>'}</div>`;
+        if (step === 3)
+          body += `<h2>${escapeHTML(draft.name)}</h2><div class="policy-quote"><p class="mono">${escapeHTML(pathFor(draft.file))}</p><p>受管 AI：${Object.entries(
+            opNames,
+          )
+            .map(([o, n]) => n + " " + decisions[draft[o]])
+            .join(
+              " / ",
+            )}</p></div><dl class="kv"><dt>修订版本</dt><dd>v${ctx().rev} → v${ctx().rev + 1}</dd><dt>生效通道</dt><dd>受管 AI 操作关口、模型提交关口</dd><dt>验证结果</dt><dd>4 个动作已试运行；发布后模拟执行端回执</dd><dt>恢复方法</dt><dd>保留上一版配置，可从工作台回滚</dd></dl><div class="spacer"></div><label class="inline-check"><input type="checkbox" data-draft="fail" ${draft.fail ? "checked" : ""}>演示一次下发失败（用于验证重试）</label><div id="publish-status" class="spacer"></div>`;
+        openDrawer(
+          "新建文件策略",
+          body,
+          actionButton("取消", "close-drawer") +
+            (step > 0 ? actionButton("上一步", "prev") : "") +
+            actionButton(
+              step === 3 ? "发布策略" : "下一步",
+              step === 3 ? "publish" : "next",
+              "",
+              "primary",
+            ),
+        );
+      }
+      function dryrunOutput() {
+        return `<div class="spacer"></div><div class="table-scroll"><table><thead><tr><th>示例动作</th><th>判定</th><th>执行通道</th></tr></thead><tbody>${Object.entries(
+          opNames,
+        )
+          .map(
+            ([o, n]) =>
+              `<tr><td>${n}</td><td>${label(draft[o])}</td><td>${ctx()[o === "disclose" ? "gateway" : "hook"] ? "已就绪 · 模拟" : "未就绪 / 发布将被阻止"}</td></tr>`,
+          )
+          .join(
+            "",
+          )}</tbody></table></div><div class="spacer"></div><p class="small muted">正常允许 ${Object.keys(opNames).filter((o) => draft[o] === "allow").length} 项 · 需要确认 ${Object.keys(opNames).filter((o) => draft[o] === "ask").length} 项 · 禁止 ${Object.keys(opNames).filter((o) => draft[o] === "deny").length} 项。未命中已有文件路径；未接入的其他通道不在本次发布范围。</p>`;
+      }
+      function validateDraft() {
+        const name = draft.name.trim(),
+          file = draft.file.trim();
+        let error = "";
+        if (!name || !file) error = "请填写策略名称与相对文件路径。";
+        else if (
+          file.startsWith("/") ||
+          file.startsWith("~") ||
+          file.includes("\\") ||
+          file.includes(":") ||
+          file.includes("*") ||
+          file.split("/").some((x) => x === ".." || x === "." || !x)
+        )
+          error =
+            "请使用范围内的相对文件路径；不要使用盘符、反斜杠、通配符或 ..。";
+        else if (ctx().rules.some((r) => r.file === file))
+          error = "此路径已有策略，请先查看已有规则，避免重复或冲突。";
+        if (error) {
+          $("#wizard-error").textContent = error;
+          $("#wizard-error").hidden = false;
+          return false;
+        }
+        draft.name = name;
+        draft.file = file;
+        return true;
+      }
+      async function publish() {
+        closeModal();
+        if (busy) return;
+        busy = true;
+        const button = $('#drawer [data-action="publish"]');
+        button.disabled = true;
+        button.textContent = "正在下发并验证…";
+        $("#publish-status").innerHTML =
+          '<div class="notice info">模拟阶段：编译 → 执行端接收 → 探针验证</div>';
+        await new Promise((resolve) => setTimeout(resolve, 650));
+        if (
+          !draft.checked ||
+          draft.baseRevision !== ctx().rev ||
+          draft.fail ||
+          !ctx().hook ||
+          !ctx().gateway
+        ) {
+          const issue = !draft.checked
+            ? "试运行已失效，请重新检查影响范围。"
+            : draft.baseRevision !== ctx().rev
+              ? "策略版本已变化，请基于最新版本重新试运行。"
+              : draft.fail
+                ? "已触发演示下发失败；取消失败模拟后可重试。"
+                : "所需通道未就绪，请恢复后重新试运行。";
+          $("#publish-status").innerHTML =
+            '<div class="notice error" role="alert">下发失败：' +
+            issue +
+            " 上一生效版本保持不变，输入已保留。</div>" +
+            (draft.fail
+              ? ""
+              : actionButton("恢复所需通道并重新试运行", "repair-draft"));
+          button.disabled = false;
+          button.textContent = "发布策略";
+          busy = false;
+          return;
+        }
+        const c = ctx();
+        c.history.push(copy(c.rules));
+        c.rules.push({
+          id: "custom-" + crypto.randomUUID().slice(0, 8),
+          name: draft.name,
+          file: draft.file,
+          type: "FILE",
+          actor: draft.actor,
+          ...Object.fromEntries(Object.keys(opNames).map((o) => [o, draft[o]])),
+        });
+        c.rev++;
+        invalidateGrants();
+        log({
+          kind: "action",
+          title: "策略发布并验证通过",
+          file: draft.file,
+          reason:
+            "模拟下发 ACK 与探针通过；受管 AI 和提交关口已使用 v" +
+            c.rev +
+            "。",
+        });
+        busy = false;
+        closeDrawer(true);
+        state.tab = "home";
+        render();
+        toast("策略发布成功；模拟执行端版本已更新。");
+      }
+      function invalidateGrants() {
+        for (const g of ctx().grants)
+          if (g.status === "active") g.status = "invalid";
+      }
+      function connect(channel) {
+        if (channel === "native") {
+          modal(
+            platform() + " 系统增强接入",
+            `<p class="muted">正式产品需完成以下系统步骤。本页仅模拟成功状态。</p><ol class="step-list">${(state.os === "mac" ? ["确认 ES entitlement 与应用签名、公证", "用户批准系统扩展", "用户开启完整磁盘访问权限", "下发策略，使用无敏感探针验证"] : ["确认驱动签名与系统版本兼容", "管理员批准安装驱动和本地服务", "加载策略并确认服务健康", "使用无敏感探针验证读写与正常保存"]).map((x) => `<li>${x}</li>`).join("")}</ol><div class="notice">即使接入成功，也不覆盖未部署执行端的远程环境、任意外发与已有数据副本。</div>`,
+            actionButton("暂不接入", "close-modal") +
+              actionButton("模拟完成并验证", "activate", channel, "primary"),
+          );
+        } else activate(channel);
+      }
+      async function activate(channel) {
+        if (busy) return;
+        closeModal();
+        busy = true;
+        toast("正在模拟连接、策略接收与探针验证…");
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        ctx()[channel] = true;
+        log({
+          kind: "action",
+          title: coverageName(channel) + "恢复",
+          reason: "模拟当前版本接收与允许/拒绝探针通过。",
+        });
+        busy = false;
+        render();
+        toast("通道已恢复并完成模拟验证。");
+      }
+      function exportReport() {
+        const c = ctx();
+        const report = {
+          type: "interaction-prototype",
+          prototypeVersion: 2,
+          discovery: discoveries(),
+          resourceVersions: c.resourceVersions || {},
+          disclaimer:
+            "全部为模拟数据，不是系统防护或真实外发证据；不含真实文件正文。",
+          exportedAt: time(Date.now()),
+          environment: { os: state.os, persona: state.persona },
+          revision: c.rev,
+          coverage: { hook: c.hook, gateway: c.gateway, native: c.native },
+          rules: c.rules,
+          events: c.events,
+          grants: c.grants.map(({ reason, ...g }) => ({
+            ...g,
+            reason: "[已隐藏用户填写的原因]",
+          })),
+        };
+        const url = URL.createObjectURL(
+          new Blob([JSON.stringify(report, null, 2)], {
+            type: "application/json",
+          }),
+        );
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "file-policy-demo-report.json";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        toast("演示报告已生成；不含真实文件内容。");
+      }
+      // v2: discovery, request freshness and task completion share the existing policy state.
+      let redactionPreview = null;
+      function resourceVersion(file) {
+        return ctx().resourceVersions?.[file] || 1;
+      }
+      function scenarios() {
+        return scenariosBase().map((s) => ({
+          ...s,
+          dest: ctx().destinations?.[s.id] || s.dest,
+        }));
+      }
+      function fingerprint(s) {
+        return JSON.stringify([
+          state.os,
+          state.persona,
+          ctx().rev,
+          s.actor,
+          s.op,
+          ruleFor(s).file,
+          resourceVersion(ruleFor(s).file),
+          s.dest,
+        ]);
+      }
+      function discoveries() {
+        const c = ctx();
+        if (!c.discovery)
+          c.discovery = {
+            scanned: false,
+            items:
+              state.persona === "dev"
+                ? [
+                    {
+                      id: "cloud",
+                      file: "config/cloud-credentials.json",
+                      name: "云服务凭据",
+                      evidence: "文件名提示凭据，尚未读取正文",
+                      recommend: "read-deny",
+                      status: "pending",
+                    },
+                    {
+                      id: "dump",
+                      file: "backup/customer.dump",
+                      name: "客户数据库备份",
+                      evidence: "备份扩展名，内容与敏感级别待确认",
+                      recommend: "disclose-ask",
+                      status: "pending",
+                    },
+                    {
+                      id: "sample",
+                      file: "config/demo.example.json",
+                      name: "演示配置",
+                      evidence: "example 命名，只是候选，不能确认安全",
+                      recommend: "disclose-ask",
+                      status: "pending",
+                    },
+                  ]
+                : [
+                    {
+                      id: "clients",
+                      file: "客户/联系人.xlsx",
+                      name: "客户联系人",
+                      evidence: "名称提示客户资料，个人信息字段待确认",
+                      recommend: "disclose-ask",
+                      status: "pending",
+                    },
+                    {
+                      id: "quotes",
+                      file: "报价/未发布报价.xlsx",
+                      name: "未发布报价",
+                      evidence: "名称提示业务资料，业务密级待确认",
+                      recommend: "disclose-ask",
+                      status: "pending",
+                    },
+                    {
+                      id: "sample",
+                      file: "模板/公开介绍.docx",
+                      name: "公开介绍候选",
+                      evidence: "名称不能证明公开，需本人确认",
+                      recommend: "disclose-ask",
+                      status: "pending",
+                    },
+                  ],
+          };
+        return c.discovery;
+      }
+      function discoveryStatus(item) {
+        const r = ctx().rules.find((r) => r.file === item.file);
+        return r
+          ? "已配置策略"
+          : item.status === "deferred"
+            ? "暂缓确认"
+            : "待确认";
+      }
+      function assets() {
+        const d = discoveries();
+        return `<div class="between section-head"><div><h2>先发现，再决定怎么保护</h2><p class="muted">只在选定范围内发现候选，确认文件用途后应用模板。</p></div>${actionButton(d.scanned ? "重新扫描示例" : "扫描示例目录", "scan-demo", "", "primary")}</div><section class="panel"><div class="eyebrow">SELECTED SCOPE / ${platform()}</div><h3 class="mono">${escapeHTML(root())}</h3><p class="muted small">元数据发现 → 本人确认 → 推荐权限 → 试运行发布 → 任务验证</p><div class="spacer"></div><div class="notice info">候选不等于已确认敏感；暂缓不代表安全；已配置策略也不代表所有应用均被覆盖。</div></section><div class="spacer"></div>${d.scanned ? `<div class="asset-cards">${d.items.map((item) => `<section class="panel">${badge(discoveryStatus(item), ctx().rules.some((r) => r.file === item.file) ? "blue" : "orange")}<h3>${item.name}</h3><p class="mono">${item.file}</p><div class="spacer"></div><p class="small muted">发现依据：${item.evidence}</p><div class="spacer"></div><div class="row wrap">${ctx().rules.some((r) => r.file === item.file) ? actionButton("查看策略", "rule", ctx().rules.find((r) => r.file === item.file).id) : actionButton("确认并设置保护", "protect-candidate", item.id, "primary")}${!ctx().rules.some((r) => r.file === item.file) ? actionButton(item.status === "deferred" ? "重新纳入" : "暂缓确认", "defer-candidate", item.id, "text") : ""}</div></section>`).join("")}</div>` : '<section class="panel empty">尚未扫描演示目录。<br>扫描只生成固定样例，不读取电脑中的真实文件。</section>'}`;
+      }
+      function taskState(s) {
+        const e = ctx().events.find(
+          (e) => e.scenario === s.id && e.kind !== "action",
+        );
+        return !e
+          ? "未验证"
+          : e.kind === "allow" && e.receipt === "completed"
+            ? "已完成"
+            : e.kind === "ask"
+              ? "等待授权"
+              : e.kind === "deny"
+                ? "已保护 · 原任务受阻"
+                : e.kind === "error"
+                  ? "执行失败 · 待重试"
+                  : "覆盖不足";
+      }
+      function home() {
+        const c = ctx(),
+          d = discoveries(),
+          pending = d.scanned
+            ? d.items.filter((i) => discoveryStatus(i) === "待确认").length
+            : 0;
+        const tasks = scenarios().filter((s) => !s.id.startsWith("custom-"));
+        return (
+          `<section class="task-banner between"><div><strong>${pending ? `有 ${pending} 个文件候选等待确认` : "从一个工作任务开始，验证文件边界"}</strong><p>确认敏感范围、限定使用权限，再用回执证明任务完成。全程保留原始文件与授权边界。</p></div>${actionButton(pending ? "处理候选文件" : "发现需要保护的文件", "tab", "assets")}</section><div class="journey"><div><b>01 发现与确认</b><p>为什么值得保护，用户看得懂</p></div><div><b>02 按任务授权</b><p>读、改、删、外发独立决定</p></div><div><b>03 安全继续工作</b><p>单次授权、脱敏副本、正常保存</p></div><div><b>04 核验与恢复</b><p>版本、回执、失效、回滚可追溯</p></div></div>` +
+          homeBase() +
+          `<div class="spacer"></div><section class="panel"><div class="between"><div><h2>任务是否真正完成</h2><p class="muted small">拦截成功与任务完成分别判断；授权创建不代表已经执行。</p></div>${actionButton("继续任务", "tab", "lab", "text")}</div><div class="task-list">${tasks.map((s) => `<div class="between task-row"><strong>${s.title}</strong>${badge(taskState(s), taskState(s) === "已完成" ? "green" : "")}${actionButton("打开任务", "open-task", s.id, "text")}</div>`).join("")}</div></section>`
+        );
+      }
+      function lab() {
+        const s = scene(),
+          r = ruleFor(s);
+        return (
+          labBase() +
+          `<section class="panel request-tools"><div class="between wrap"><div><h3>验证边界变化与异常恢复</h3><p class="small muted">当前文件样本 v${resourceVersion(r.file)}；${escapeHTML(s.dest)}。改变条件后，旧许可必须失效。</p></div><div class="row wrap">${actionButton("模拟文件更新", "change-file", r.file)}${s.op === "disclose" ? actionButton("切换发送目标", "change-dest", s.id) : ""}${actionButton(ctx().failNext ? "已安排一次执行失败" : "模拟下次执行失败", "fail-next")}</div></div></section>`
+        );
+      }
+      function resultPanel(e) {
+        const result =
+          e.kind === "error"
+            ? `<section class="result">${badge("执行失败 · 模拟", "red")}<h3>策略允许，任务还没有完成。</h3><p>${e.reason}</p><div class="spacer"></div>${actionButton("重试当前任务", "run", "", "primary")}${actionButton("查看失败回执", "event", e.id, "text")}</section>`
+            : resultPanelBase(e);
+        return (
+          result +
+          `<div class="decision-box"><strong>任务状态：${e.kind === "allow" && e.receipt === "completed" ? "已取得模拟完成回执" : e.kind === "deny" ? "文件边界已保护，原任务受阻" : e.kind === "ask" ? "操作未执行，等待明确授权" : e.kind === "uncovered" ? "无法验证结果" : "未完成，请重试"}</strong><p class="small muted">${e.kind === "deny" ? "推荐使用样例配置或不含凭据的材料继续；锁定禁止不能用一次授权覆盖。" : e.kind === "ask" ? "许可绑定当前文件版本与目标；文件更新、目标切换后请重新确认。" : "规则判断、执行结果与业务完成分别记录。"}</p>${e.kind === "deny" && e.scenario === "secret" ? actionButton("改用安全样例继续", "safe-example", e.id, "primary") : ""}</div>`
+        );
+      }
+      async function scanDemo() {
+        if (busy) return;
+        busy = true;
+        $("#content").innerHTML =
+          '<section class="panel empty" role="status">正在扫描示例元数据：枚举范围 → 生成候选 → 准备人工确认…</section>';
+        await new Promise((r) => setTimeout(r, 400));
+        discoveries().scanned = true;
+        log({
+          kind: "action",
+          title: "示例目录扫描完成",
+          reason: "只发现固定元数据候选，尚未确认敏感属性；没有读取真实文件。",
+        });
+        busy = false;
+        render();
+      }
+      function protectCandidate(id) {
+        const item = discoveries().items.find((i) => i.id === id);
+        newPolicy();
+        draft.name = item.name + "保护";
+        draft.file = item.file;
+        draft.read = item.recommend === "read-deny" ? "deny" : "allow";
+        draft.write = item.recommend === "read-deny" ? "deny" : "ask";
+        draft.disclose = item.recommend === "read-deny" ? "deny" : "ask";
+        dirty = true;
+        wizard();
+      }
+      function staleFile(file) {
+        ctx().resourceVersions ??= {};
+        ctx().resourceVersions[file] = resourceVersion(file) + 1;
+        for (const g of ctx().grants)
+          if (g.status === "active" && g.file === file) g.status = "invalid";
+        log({
+          kind: "action",
+          title: "文件样本已更新",
+          file,
+          reason: "旧文件版本对应的授权和副本预览失效，需重新验证。",
+        });
+        lastResult = null;
+        render();
+      }
+      async function v2Click(action, value) {
+        if (busy) return;
+        switch (action) {
+          case "repair-draft":
+            ctx().hook = true;
+            ctx().gateway = true;
+            draft.baseRevision = ctx().rev;
+            draft.checked = false;
+            step = 2;
+            log({
+              kind: "action",
+              title: "恢复策略所需通道",
+              reason: "模拟恢复接收与探针；草稿保留，要求重新试运行。",
+            });
+            wizard();
+            toast("草稿已保留，请重新试运行后发布。");
+            break;
+          case "scan-demo":
+            await scanDemo();
+            break;
+          case "protect-candidate":
+            protectCandidate(value);
+            break;
+          case "defer-candidate": {
+            const i = discoveries().items.find((i) => i.id === value);
+            i.status = i.status === "deferred" ? "pending" : "deferred";
+            log({
+              kind: "action",
+              title: i.status === "deferred" ? "候选暂缓确认" : "候选重新纳入",
+              file: i.file,
+              reason: "不修改策略、不代表文件安全。",
+            });
+            render();
+            break;
+          }
+          case "open-task":
+            selectedScenario = value;
+            state.tab = "lab";
+            lastResult = null;
+            render();
+            break;
+          case "change-file":
+            staleFile(value);
+            toast("文件版本已变化；旧许可与预览不可复用。");
+            break;
+          case "change-dest": {
+            const sc = scene();
+            ctx().destinations ??= {};
+            ctx().destinations[value] = sc.dest.includes("alternate")
+              ? "外部模型 · model.example"
+              : "外部模型 · alternate.example";
+            for (const g of ctx().grants)
+              if (g.status === "active" && g.scenario === value)
+                g.status = "invalid";
+            log({
+              kind: "action",
+              title: "发送目的地已改变",
+              reason: "原目的地的授权与脱敏预览不可用于新目标。",
+            });
+            lastResult = null;
+            render();
+            break;
+          }
+          case "fail-next":
+            ctx().failNext = !ctx().failNext;
+            render();
+            toast("仅下一次允许执行的场景将模拟失败；不改变规则。");
+            break;
+          case "safe-example": {
+            const e = log({
+              kind: "allow",
+              decision: "allow",
+              receipt: "completed",
+              title: "使用安全样例继续开发",
+              sourceEventId: value,
+              scenario: "secret",
+              file: ".env.example",
+              actor: "受管 AI",
+              op: "read",
+              dest: "本地上下文",
+              ruleName: "公开样例材料",
+              reason:
+                "示例只提供配置字段名称，不包含生产值；原始凭据规则仍然禁止。",
+            });
+            lastResult = e;
+            render();
+            break;
+          }
+        }
+      }
+      // Keep the original event router; dispatch new actions through a separate capture.
+      document.addEventListener("click", (event) => {
+        const b = event.target.closest("button[data-action]");
+        if (b && !b.disabled) return v2Click(b.dataset.action, b.dataset.value);
+      });
+
+      document.addEventListener("input", (e) => {
+        const field = e.target.dataset.draft;
+        if (field && draft) {
+          draft[field] =
+            e.target.type === "checkbox" ? e.target.checked : e.target.value;
+          dirty = true;
+          if (field !== "fail") draft.checked = false;
+        }
+      });
+      document.addEventListener("change", (e) => {
+        const field = e.target.dataset.draft;
+        if (field && draft) {
+          draft[field] =
+            e.target.type === "checkbox" ? e.target.checked : e.target.value;
+          dirty = true;
+          if (field !== "fail") draft.checked = false;
+        }
+      });
+      document.addEventListener("submit", async (e) => {
+        if (e.target.id === "search-form") {
+          e.preventDefault();
+          query = e.target.q.value;
+          filterKind = e.target.kind.value;
+          const table = $(".table-scroll tbody");
+          table.innerHTML =
+            '<tr><td colspan="5"><div class="empty">正在查询演示记录…</div></td></tr>';
+          await new Promise((r) => setTimeout(r, 180));
+          render();
+        }
+      });
+      document.addEventListener("click", async (event) => {
+        const b = event.target.closest("button[data-action]");
+        if (!b || b.disabled) return;
+        const a = b.dataset.action,
+          v = b.dataset.value;
+        if (busy && !["close-modal"].includes(a)) return;
+        switch (a) {
+          case "tab":
+            state.tab = v;
+            lastResult = null;
+            render();
+            break;
+          case "os":
+          case "persona":
+            state[a] = v;
+            selectedScenario = state.persona === "dev" ? "secret" : "payroll";
+            lastResult = null;
+            query = "";
+            filterKind = "all";
+            render();
+            break;
+          case "new":
+            newPolicy();
+            break;
+          case "close-drawer":
+            closeDrawer();
+            break;
+          case "close-modal":
+            closeModal();
+            break;
+          case "discard":
+            closeModal();
+            closeDrawer(true);
+            break;
+          case "rule":
+            showRule(v);
+            break;
+          case "event":
+            showEvent(v);
+            break;
+          case "scenario":
+            selectedScenario = v;
+            lastResult = null;
+            render();
+            break;
+          case "run":
+            await runScenario();
+            break;
+          case "grant":
+            grantForm(v);
+            break;
+          case "save-grant":
+            saveGrant(v);
+            break;
+          case "redact":
+            redact(v);
+            break;
+          case "send-redacted": {
+            if (!$("#redact-check").checked) {
+              toast("请先确认副本内容。");
+              return;
+            }
+            if (!ctx().gateway) {
+              toast("提交关口不可用，请先恢复。");
+              return;
+            }
+            const src = ctx().events.find((e) => e.id === v);
+            if (
+              !redactionPreview ||
+              redactionPreview.eventId !== v ||
+              redactionPreview.fingerprint !== fingerprint(scene())
+            ) {
+              toast("预览已失效，请重新验证并生成副本。");
+              return;
+            }
+            redactionPreview = null;
+            lastResult = log({
+              kind: "allow",
+              receipt: "completed",
+              decision: "allow",
+              sourceEventId: src.id,
+              title: "提交脱敏副本",
+              file: "薪资汇总.redacted.xlsx",
+              actor: "受管 AI",
+              op: "disclose",
+              dest: scene().dest,
+              ruleName: "用户确认的精确副本许可",
+              reason:
+                "模拟复扫与用户确认后提交副本；原文件未变，原件仍需单独授权。",
+              scenario: "payroll",
+            });
+            closeModal();
+            render();
+            toast("脱敏副本提交模拟完成。");
+            break;
+          }
+          case "clear-search":
+            $("#search-form").q.value = "";
+            $("#search-form").kind.value = "all";
+            toast("输入已清空；点击“搜索”应用。");
+            break;
+          case "next":
+            if (step === 0 && !validateDraft()) return;
+            if (step === 2 && !draft.checked) {
+              toast("请先完成试运行。");
+              return;
+            }
+            step++;
+            wizard();
+            break;
+          case "prev":
+            step--;
+            wizard();
+            break;
+          case "dryrun":
+            busy = true;
+            b.disabled = true;
+            b.textContent = "正在模拟四种操作…";
+            await new Promise((r) => setTimeout(r, 400));
+            draft.checked = true;
+            busy = false;
+            wizard();
+            toast("试运行完成；可查看每项结果。");
+            break;
+          case "publish":
+            if (!draft.checked) {
+              toast("请先重新试运行。");
+              return;
+            }
+            confirmAction(
+              "发布这条文件策略？",
+              `<p>将为 <strong>${escapeHTML(draft.file)}</strong> 增加一条规则，从 v${ctx().rev} 更新到 v${ctx().rev + 1}。已有临时授权将失效。</p><div class="spacer"></div><p class="muted">影响受管 AI 操作与模型提交。上一版规则保留，可回滚。</p>`,
+              "publish",
+            );
+            break;
+          case "confirm-publish":
+            await publish();
+            break;
+          case "rollback":
+            confirmAction(
+              "回滚到上一版规则？",
+              "<p>将以先前规则创建新的修订版本并模拟验证。当前临时授权失效，审计记录保留，已执行的文件操作不会撤销。</p>",
+              "rollback",
+            );
+            break;
+          case "confirm-rollback": {
+            closeModal();
+            const c = ctx();
+            if (!c.history.length) return;
+            c.rules = c.history.pop();
+            c.rev++;
+            invalidateGrants();
+            log({
+              kind: "action",
+              title: "策略回滚并验证通过",
+              reason:
+                "恢复上一配置，生成新修订版 v" +
+                c.rev +
+                "；模拟执行端回执通过。",
+            });
+            render();
+            toast("回滚成功，已生成新的策略修订版。");
+            break;
+          }
+          case "lose":
+            confirmAction(
+              "模拟该通道失效？",
+              `<p>${coverageName(v)} 将显示未覆盖。其他就绪通道继续工作，恢复时需要重新校验。</p>`,
+              "lose",
+              v,
+            );
+            break;
+          case "confirm-lose":
+            closeModal();
+            ctx()[v] = false;
+            log({
+              kind: "action",
+              title: coverageName(v) + "失效",
+              reason: "模拟权限被撤销或执行端失联；相关场景降级为未覆盖。",
+            });
+            render();
+            toast("已模拟失效，覆盖状态已更新。");
+            break;
+          case "connect":
+            connect(v);
+            break;
+          case "activate":
+            await activate(v);
+            break;
+          case "revoke":
+            confirmAction(
+              "撤销这项单次授权？",
+              "<p>尚未使用的许可立即失效。再次操作需重新申请，原策略保持不变。</p>",
+              "revoke",
+              v,
+            );
+            break;
+          case "confirm-revoke":
+            closeModal();
+            {
+              const g = ctx().grants.find((x) => x.id === v);
+              if (g.status === "active") {
+                g.status = "revoked";
+                log({
+                  kind: "action",
+                  title: "临时授权已撤销",
+                  file: g.file,
+                  reason: "模拟撤销及缓存失效回执完成。",
+                });
+              }
+            }
+            render();
+            toast("授权已撤销。");
+            break;
+          case "expire": {
+            const g = ctx().grants.find((x) => x.id === v);
+            g.expiresAt = Date.now() - 1;
+            expire();
+            render();
+            toast("已模拟到期；再次操作恢复原策略。");
+            break;
+          }
+          case "export":
+            exportReport();
+            break;
+          case "reset":
+            confirmAction(
+              "重置全部演示数据？",
+              "<p>将清空此原型的策略、事件与授权，恢复初始模板。不会操作任何真实文件。</p>",
+              "reset",
+            );
+            break;
+          case "confirm-reset":
+            closeModal();
+            state = { os: "mac", persona: "dev", tab: "home", contexts: {} };
+            query = "";
+            filterKind = "all";
+            lastResult = null;
+            selectedScenario = "secret";
+            render();
+            toast("演示数据已重置。");
+            break;
+        }
+      });
+      $("#drawer").addEventListener("cancel", (e) => {
+        e.preventDefault();
+        if (!busy) closeDrawer();
+      });
+      $("#modal").addEventListener("cancel", (e) => {
+        e.preventDefault();
+        closeModal();
+      });
+      for (const id of ["drawer", "modal"])
+        $("#" + id).addEventListener("click", (e) => {
+          if (e.target !== e.currentTarget || busy) return;
+          const r = e.currentTarget.getBoundingClientRect();
+          if (
+            e.clientX < r.left ||
+            e.clientX > r.right ||
+            e.clientY < r.top ||
+            e.clientY > r.bottom
+          )
+            id === "drawer" ? closeDrawer() : closeModal();
+        });
+      window.addEventListener("beforeunload", (e) => {
+        if (dirty) {
+          e.preventDefault();
+          e.returnValue = "";
+        }
+      });
+      setInterval(() => {
+        if (expire()) {
+          persist();
+          if (!$("#drawer").open && !$("#modal").open) render();
+        }
+      }, 1000);
+      render();
+    </script>
+  </body>
+</html>

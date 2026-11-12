@@ -5,6 +5,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import type { SourceProject, SourceTask } from "../../src/shared/handoff-api";
 import { sanitizer } from "../../src/shared/handoff";
+import { codexSpawn, readableTitle, subagentTitle } from "./history-titles";
 
 export const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 export const stringValue = (value: unknown) => typeof value === "string" ? value : "";
@@ -125,14 +126,14 @@ export async function readCodexIndex(nativeHome: string): Promise<CodexIndex> {
         }
         if (tables.has("threads")) {
           const columns = new Set(db.prepare("PRAGMA table_info(threads)").all().map(row => String(row.name)));
-          const fields = ["id", "name", "title", "preview", "cwd", "updated_at_ms", "updated_at", "source", "thread_source", "rollout_path", "project_id", "history_mode"];
+          const fields = ["id", "name", "title", "preview", "first_user_message", "cwd", "updated_at_ms", "updated_at", "source", "thread_source", "rollout_path", "project_id", "history_mode"];
           const select = fields.map(key => columns.has(key) ? key : `NULL AS ${key}`).join(",");
           const filters = [columns.has("archived") ? "archived=0" : "1", columns.has("source") ? "(source IN ('cli','vscode') OR source IS NULL OR source='')" : "1"];
           const rows = db.prepare(`SELECT ${select} FROM threads WHERE ${filters.join(" AND ")} LIMIT 5001`).all();
           if (rows.length > 5000) throw new Error("会话索引超过 5000 项");
           const clean = sanitizer();
           result.threads = rows.filter(row => interactiveCodex(row.source, row.thread_source)).map(row => ({
-            id: stringValue(row.id), title: clean.clean(stringValue(row.name) || stringValue(row.title) || stringValue(row.preview) || "无标题对话"),
+            id: stringValue(row.id), title: clean.clean(readableTitle(stringValue(row.name) || stringValue(row.title) || stringValue(row.preview) || stringValue(row.first_user_message)) || "无标题对话"),
             directory: stringValue(row.cwd), updated: Number(row.updated_at_ms) || Number(row.updated_at) * 1000 || 0,
             projectId: stringValue(row.project_id) || undefined, file: stringValue(row.rollout_path), historyMode: stringValue(row.history_mode), sourceKind: stringValue(row.source), threadSource: stringValue(row.thread_source),
           }));

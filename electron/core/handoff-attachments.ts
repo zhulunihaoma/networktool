@@ -8,9 +8,12 @@ import { sanitizer, type HandoffImport } from "../../src/shared/handoff";
 import type {
   HandoffAttachment,
   HandoffAttachmentScan,
+  HandoffAttachmentSecurity,
   HandoffAttachmentSelection,
   HandoffPackageSummary,
+  HandoffSecurityEvent,
 } from "../../src/shared/handoff-attachments";
+import { credentialAttachmentRule } from "../../src/shared/handoff-attachments";
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): v is Obj =>
@@ -66,6 +69,51 @@ const safeName = (s: string) =>
     .replace(/[\x00-\x1f\x7f/:*?"<>|]/g, "_")
     .replace(/^\.+/, "")
     .slice(0, 150) || "attachment";
+/** Display-only name for refused files: keeps the leading dot (".env") so users recognise it. */
+const displayName = (s: string) =>
+  sanitizer()
+    .clean(path.basename(s.replace(/\\/g, "/")))
+    .replace(/[\x00-\x1f\x7f/:*?"<>|]/g, "_")
+    .slice(0, 150) || "attachment";
+const PRIVATE_KEY_CONTENT =
+  /^\s*-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----|^\s*PuTTY-User-Key-File-/;
+const BINARY_MIME =
+  /^(?:image|audio|video|font)\/|^application\/(?:pdf|zip|gzip|x-tar|x-7z|vnd\.|msword|octet-stream$)/;
+/** Text = plausible UTF-8 without NUL bytes. Images and known binary formats are never rewritten. */
+export function attachmentText(bytes: Buffer, mime?: string): string | undefined {
+  if (imageMime(bytes) || (mime && BINARY_MIME.test(mime) && mime !== "application/octet-stream"))
+    return undefined;
+  if (bytes.subarray(0, 8192).includes(0)) return undefined;
+  const magic = bytes.subarray(0, 5).toString("latin1");
+  if (magic.startsWith("%PDF") || magic.startsWith("PK\x03\x04")) return undefined;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return undefined;
+  }
+}
+/** Content-level credential check, applied to text and binary payloads alike. */
+export function credentialContentRule(bytes: Buffer) {
+  return PRIVATE_KEY_CONTENT.test(bytes.subarray(0, 4096).toString("latin1"))
+    ? { id: "handoff.credential.private-key-content", reason: "文件内容是私钥" }
+    : undefined;
+}
+/** Masks secrets in text attachments with the same sanitizer as conversation text. */
+export function redactAttachment(bytes: Buffer, mime?: string) {
+  const text = attachmentText(bytes, mime);
+  if (text === undefined) return { bytes, text: false, hits: 0 };
+  const cleaned = sanitizer().clean(text);
+  // Count masked spots in the output: chained rules (e.g. "token=sk-…") may
+  // replace the same secret twice, which would overstate the user-facing number.
+  const marks = (s: string) => s.split("[已脱敏]").length - 1;
+  const hits = marks(cleaned) - marks(text);
+  return cleaned !== text
+    ? { bytes: Buffer.from(cleaned, "utf8"), text: true, hits: Math.max(hits, 1) }
+    : { bytes, text: true, hits: 0 };
+}
+const UNREDACTED_NOTE = /[；;，,]?\s*(?:附件)?内容未(?:经)?脱敏。?/g;
+const noteWith = (note: string, extra: string) =>
+  `${note.replace(UNREDACTED_NOTE, "").replace(/[。；;，,\s]+$/, "")}。${extra}`;
 function imageMime(b: Buffer): string | undefined {
   if (b.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])))
     return "image/png";
@@ -210,15 +258,55 @@ async function artifactFile(a: NonNullable<AttachmentCandidate["artifact"]>) {
     );
   return readFile(candidates[0], a.root);
 }
+class CredentialBlock extends Error {
+  constructor(readonly rule: { id: string; reason: string }) {
+    super(rule.reason);
+  }
+}
 export class AttachmentSet {
   private candidates: AttachmentCandidate[];
   private complete: boolean;
   private scan?: HandoffAttachmentScan;
   private payloads = new Map<string, Buffer>();
-  constructor(data: HandoffImport) {
+  private names = new Map<string, string[]>();
+  private emitted = new Set<string>();
+  private project: string;
+  constructor(
+    data: HandoffImport,
+    private onEvent?: (e: HandoffSecurityEvent) => void,
+  ) {
+    this.project = sanitizer().clean(data.directory || "");
     const known = registry.get(data);
     this.candidates = known?.candidates || [];
     this.complete = !!known?.complete;
+  }
+  private emit(key: string, e: HandoffSecurityEvent) {
+    if (this.emitted.has(key)) return;
+    this.emitted.add(key);
+    try {
+      this.onEvent?.({ ...e, project: this.project || undefined });
+    } catch {
+      // A broken timeline must never change what gets packed.
+    }
+  }
+  private block(
+    item: HandoffAttachment,
+    rule: { id: string; reason: string },
+    security: HandoffAttachmentSecurity,
+  ) {
+    item.status = "blocked";
+    item.note = `已拒绝打包：${rule.reason}。如确需提供，请只在目标工具中手动提供其中的非敏感内容。`;
+    security.blocked.push({ name: item.name, reason: rule.reason });
+    this.emit(`block:${item.name}:${rule.id}`, {
+      operation: "handoff.attachment.pack",
+      decision: "deny",
+      ruleId: rule.id,
+      reason: `${item.name}：${rule.reason}`,
+    });
+  }
+  /** Number of credential-like attachments refused by the latest scan. */
+  blockedCount() {
+    return this.scan?.security?.blocked.length || 0;
   }
   addFiles(files: string[]) {
     if (files.length + this.candidates.length > ATTACHMENT_LIMITS.count)
@@ -235,7 +323,9 @@ export class AttachmentSet {
   }
   async inspect(): Promise<HandoffAttachmentScan> {
     this.payloads.clear();
+    this.names.clear();
     this.scan = undefined;
+    const security: HandoffAttachmentSecurity = { blocked: [], redacted: [] };
     const entries: HandoffAttachment[] = [],
       warnings: string[] = [];
     let total = 0;
@@ -263,6 +353,8 @@ export class AttachmentSet {
         origin: c.origin || "stored",
       };
       try {
+        const nameRule = credentialAttachmentRule(c.name, c.file);
+        if (nameRule) throw new CredentialBlock(nameRule);
         if (c.unsupported) {
           item.status = "unsupported";
           item.note = c.note || "仅有文件引用或远程地址，请手动补充原文件。";
@@ -290,12 +382,18 @@ export class AttachmentSet {
           const hash = createHash("sha256").update(result.bytes).digest("hex");
           if (c.digest && c.digest !== hash)
             throw new Error("附件内容校验失败。");
+          const contentRule = credentialContentRule(result.bytes);
+          if (contentRule) throw new CredentialBlock(contentRule);
+          const red = redactAttachment(result.bytes, result.mime);
+          result.bytes = red.bytes;
           if (total + result.bytes.length > ATTACHMENT_LIMITS.total)
             throw new Error(
               "附件合计超过 64 MB，此附件未纳入；请缩小范围或手动补充。",
             );
           item.size = result.bytes.length;
-          item.sha256 = hash;
+          item.sha256 = red.hits
+            ? createHash("sha256").update(result.bytes).digest("hex")
+            : hash;
           item.mime = mimeType(result.mime);
           if (c.mime && c.mime !== result.mime)
             item.note =
@@ -315,9 +413,26 @@ export class AttachmentSet {
               item.name.replace(/\.[a-z0-9]{1,8}$/i, "") + extension[item.mime],
             );
           total += item.size;
+          this.names.set(item.id, [c.name || "", c.file || ""]);
+          if (red.hits) {
+            item.redactions = red.hits;
+            item.note = noteWith(item.note, `文本中 ${red.hits} 处敏感信息已遮盖。`);
+            security.redacted.push({ name: item.name, hits: red.hits });
+          } else if (red.text) {
+            item.note = noteWith(item.note, "已扫描文本，未发现已知密钥格式。");
+          }
           this.payloads.set(item.id, result.bytes);
         }
       } catch (error) {
+        if (error instanceof CredentialBlock) {
+          item.name = displayName(
+            c.name || (c.file ? path.basename(c.file) : "attachment"),
+          );
+          item.size = 0;
+          this.block(item, error.rule, security);
+          entries.push(item);
+          continue;
+        }
         const code = (error as NodeJS.ErrnoException).code;
         item.status = code === "ENOENT" ? "missing" : "error";
         item.note =
@@ -329,16 +444,24 @@ export class AttachmentSet {
       }
       entries.push(item);
     }
-    return (this.scan = { token: randomUUID(), entries, complete, warnings });
+    return (this.scan = {
+      token: randomUUID(),
+      entries,
+      complete,
+      warnings,
+      security,
+    });
   }
   selection(options: HandoffAttachmentSelection) {
     const scan = this.scan;
     if (!scan || scan.token !== options.attachmentScanToken)
       throw new Error("附件清单已变更，请重新生成预览。");
     const ids = options.attachmentIds || [];
-    if (!ids.length || new Set(ids).size !== ids.length)
-      throw new Error("请至少选择一个可打包附件。");
+    if (new Set(ids).size !== ids.length)
+      throw new Error("附件选择重复，请重新选择。");
     const selected = ids.map((id) => scan.entries.find((e) => e.id === id));
+    if (selected.some((e) => e?.status === "blocked"))
+      throw new Error("所选附件包含已拒绝打包的敏感文件，请取消勾选后重试。");
     if (
       selected.some(
         (e) => !e || e.status !== "ready" || !this.payloads.has(e.id),
@@ -346,8 +469,32 @@ export class AttachmentSet {
     )
       throw new Error("所选附件不可用，请重新扫描。");
     const entries = selected as HandoffAttachment[];
+    // Main-process recheck: never rely on the renderer or on the earlier scan alone.
+    for (const e of entries) {
+      const [rawName, rawFile] = this.names.get(e.id) || [];
+      const rule =
+        credentialAttachmentRule(rawName, rawFile, e.name) ||
+        credentialContentRule(this.payloads.get(e.id)!);
+      if (rule) {
+        this.emit(`deny:${scan.token}:${e.id}`, {
+          operation: "handoff.attachment.pack",
+          decision: "deny",
+          ruleId: rule.id,
+          reason: `${e.name}：${rule.reason}`,
+        });
+        throw new Error(`附件 ${e.name} 属于敏感文件（${rule.reason}），已拒绝打包。`);
+      }
+      if (e.redactions)
+        this.emit(`redact:${scan.token}:${e.id}`, {
+          operation: "handoff.attachment.redact",
+          decision: "allow",
+          ruleId: "handoff.attachment.redact",
+          reason: `${e.name}：打包前已遮盖 ${e.redactions} 处敏感信息`,
+        });
+    }
     const incomplete =
-      !scan.complete || scan.entries.some((e) => e.status !== "ready");
+      !scan.complete ||
+      scan.entries.some((e) => e.status !== "ready" && e.status !== "blocked");
     if (incomplete && !options.allowPartialAttachments)
       throw new Error("存在无法恢复或未确认的附件，请明确确认仅导出可用部分。");
     const summary: HandoffPackageSummary = {

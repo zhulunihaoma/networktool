@@ -3,6 +3,7 @@ import {
   ChevronRight,
   Cpu,
   Info,
+  ListChecks,
   Loader2,
   Pin,
   RefreshCw,
@@ -25,20 +26,16 @@ import {
   type ToolFeature,
 } from "./shared/assistant";
 import { guidanceFor, repairEligibility } from "./shared/adapters";
+import { suggestedPlatformId, toolNetworkProfile, TOOL_KIND_LABELS, TOOL_KIND_NOTES } from "./shared/tool-network";
 import Modal from "./Modal";
 import { PLATFORM_LABELS } from "./shared/platforms";
-const TOOL_PUBLIC_ENTRY: Record<string, string> = {
-  codex: "codex",
-  "claude-desktop": "claude",
-  cursor: "cursor",
-  "deepseek-harness": "deepseek",
-};
 export default function InstalledTools({
   api,
   onError,
   onFiles,
   onDiagnose,
   onProviders,
+  onTriage,
   platformScan,
   onCheckPlatform,
 }: {
@@ -46,6 +43,7 @@ export default function InstalledTools({
   onError: (message: string) => void;
   onFiles: () => void;
   onProviders: (tool: ToolInstall) => void;
+  onTriage: (tool: ToolInstall) => void;
   onDiagnose: (
     tool: ToolInstall,
     componentId: string,
@@ -280,10 +278,10 @@ export default function InstalledTools({
               tool={tool}
               result={platformScan?.results.find(
                 (result) =>
-                  result.platformId === TOOL_PUBLIC_ENTRY[tool.productId],
+                  result.platformId === suggestedPlatformId(tool.productId),
               )}
               onCheck={() => {
-                const platformId = TOOL_PUBLIC_ENTRY[tool.productId];
+                const platformId = suggestedPlatformId(tool.productId);
                 if (platformId) onCheckPlatform(platformId);
                 else {
                   setSelected(tool.id);
@@ -313,6 +311,10 @@ export default function InstalledTools({
             <UpdateNotice update={tool.update} version={tool.version} />
             <button className="secondary" onClick={() => onProviders(tool)}>
               <Wifi size={14} /> 检查相关模型服务
+            </button>
+            <button className="text-button" onClick={() => onTriage(tool)}>
+              <ListChecks size={14} /> 连接异常？按顺序排查
+              <ChevronRight size={14} />
             </button>
             <button
               className="text-button"
@@ -663,7 +665,8 @@ function NetworkAvailability({
   result?: PlatformResult;
   onCheck: () => void;
 }) {
-  const knownEntry = !!TOOL_PUBLIC_ENTRY[tool.productId];
+  const knownEntry = !!suggestedPlatformId(tool.productId);
+  const profile = toolNetworkProfile(tool.productId);
   const checking = result?.status === "checking";
   const networkReachable =
     result &&
@@ -743,6 +746,14 @@ function NetworkAvailability({
           ? ` · ${new Date(result.checkedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`
           : ""}
       </small>
+      {profile && (
+        <small>
+          {profile.kinds.map((k) => TOOL_KIND_LABELS[k]).join(" / ")}：
+          {profile.kinds.includes("cli-agent")
+            ? TOOL_KIND_NOTES["cli-agent"]
+            : TOOL_KIND_NOTES["desktop-host"]}
+        </small>
+      )}
     </div>
   );
 }

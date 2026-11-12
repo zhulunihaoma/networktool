@@ -270,7 +270,7 @@ export function providerConnectionView(result?: ProviderResult): {
       return {
         label: proxyOnly ? "代理已连通 · 服务异常" : "已连通 · 服务异常",
         tone: "amber",
-        summary: `${routeSummary}${result.httpStatus === 429 ? "服务限制请求频率，请稍后重试。" : "服务返回异常响应，请稍后重试。"}`,
+        summary: `${routeSummary}${result.httpStatus === 429 ? "服务返回限流（HTTP 429）：限速、配额或风控均有可能，请在原工具确认。" : "服务返回异常响应，请稍后重试。"}`,
         pathNote,
       };
     return {

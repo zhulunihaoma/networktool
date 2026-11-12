@@ -1,3 +1,4 @@
+import type { FileWorkflowAPI as importFileWorkflowAPI } from "./file-workflow";
 export type IdentityStatus =
   | "installed_confirmed"
   | "running_confirmed"
@@ -313,8 +314,9 @@ export function sortTools(tools: ToolInstall[], issueProducts: string[] = []) {
   );
 }
 export type FileDecision = "allow" | "ask" | "deny";
-export type FileOperation = "read" | "write" | "disclose";
+export type FileOperation = "read" | "write" | "delete" | "disclose";
 export interface FileCandidate {
+  review?: "pending" | "deferred" | "confirmed" | "stale";
   id: string;
   relativePath: string;
   reason: string;
@@ -330,6 +332,7 @@ export interface FilePolicy {
   disclose: FileDecision;
   enabled: boolean;
   activeRevision: number;
+  delete?: FileDecision;
 }
 export interface FileScope {
   id: string;
@@ -344,7 +347,7 @@ export interface FileScope {
   warnings: string[];
 }
 export interface FileCoverage {
-  mode: "policy_validation_only";
+  mode: "policy_validation_only" | "managed_local";
   ruleEnabled: boolean;
   eventCollection: "assistant_only";
   canBlockToolAccess: false;
@@ -381,6 +384,7 @@ export interface FileAlert {
   evidenceIds: string[];
 }
 export interface FileWorkspace {
+  workflow?: import("./file-workflow").FileWorkflowView;
   scopes: FileScope[];
   alerts: FileAlert[];
   coverage: FileCoverage;
@@ -390,7 +394,7 @@ export interface AuditPage {
   events: AuditEvent[];
   nextCursor?: number;
 }
-export interface AssistantAPI {
+export interface AssistantAPI extends importFileWorkflowAPI {
   tools(): Promise<ToolInventory>;
   discoverTools(): Promise<ToolInventory>;
   checkToolUpdates(id?: string): Promise<ToolInventory>;

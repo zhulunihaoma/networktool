@@ -3,15 +3,32 @@ import { constants } from "node:fs";
 import { SKILL_TARGETS as TOOL_REGISTRY, SKILL_TARGETS_CHECKED_AT, type SkillTargetDefinition } from "../../src/shared/skill-targets";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import type { SkillCopyResult, SkillItem, SkillScan, SkillCopyPreview, SkillVerification, SkillDeletePreview, SkillDeleteResult } from "../../src/shared/skills";
+import type { SkillCopyResult, SkillItem, SkillScan, SkillCopyPreview, SkillVerification, SkillDeletePreview, SkillDeleteResult, SkillTidyReport, SkillTidyResult, SkillMoveRecord } from "../../src/shared/skills";
 import { convertSkill, convertOpenaiMetadata, SKILL_RULES, SKILL_RULES_DATE } from "./skill-compatibility";
 import { checkSkillResources, discoverOpenCode, matchDiscoveredSkill, type SkillProbe } from "./skill-verification";
 import { analyzeSkillTree, copySkillTree, fingerprintSkillTree, resolveSkillLink } from "./skill-copy-tree";
 import { adviseSkills, deletionFingerprint, listTrashedSkills, moveSkillToTrash, restoreTrashedSkill } from "./skill-cleanup";
 import { attachSkillUsage } from "./skill-usage";
+import { scanSkillFiles } from "../security/skill-scan";
+import type { SkillRiskReport } from "../../src/shared/security-scan";
+import { SkillCatalog, applyUsageAdvice, compareSkillItems } from "./skill-catalog";
+import { groupSkills, skillReferences } from "../../src/shared/skill-insights";
+import { analyzeTidy, applyTidyPlan, listSkillMoves, revertSkillMove, type TidyPlanEntry } from "./skill-tidy";
 
 const MAX_DEPTH = 6, MAX_ENTRIES = 4000, MAX_DOCUMENT = 256 * 1024;
 const MAX_COPY_FILES = 500;
+const RISK_ORDER = { none: 0, low: 1, medium: 2, high: 3 } as const;
+
+/** 安全事件回调：高风险 Skill 被拒绝复制或用户确认后放行时调用，由主进程写入安全时间线。 */
+export interface SkillSecurityEvent { operation: string; decision: "deny" | "allow" | "ask"; ruleId?: string; reason?: string; project?: string }
+export interface SkillScannerOptions { onSecurityEvent?: (event: SkillSecurityEvent) => void }
+
+function riskSummary(risk: SkillRiskReport) {
+  const high = risk.findings.filter(item => item.level === "high");
+  const labels = [...new Set(high.map(item => item.label))].join("、");
+  const first = high[0];
+  return { ruleId: first?.rule, reason: first ? `${labels}；证据 ${first.file}:${first.line}` : undefined };
+}
 
 // Copy targets are explicitly audited; legacy scan roots must never select the destination.
 
@@ -65,7 +82,7 @@ async function readDocument(file: string) {
   } finally { await handle.close(); }
 }
 export class SkillScanner {
-  private plans = new Map<string, { ids: string[]; target: string; expires: number; hashes: Map<string, string>; expectedHashes: Map<string, string>; rows: Map<string, SkillCopyPreview["items"][number]>; existingFingerprints: Map<string, string> }>();
+  private plans = new Map<string, { ids: string[]; target: string; expires: number; hashes: Map<string, string>; expectedHashes: Map<string, string>; rows: Map<string, SkillCopyPreview["items"][number]>; existingFingerprints: Map<string, string>; risks: Map<string, SkillRiskReport> }>();
   private deletePlans = new Map<string, { ids: string[]; expires: number; fingerprints: Map<string, string>; rows: Map<string, SkillDeletePreview["items"][number]> }>();
   private extraRoots: string[] = [];
   private installedDirs = new Set<string>();
@@ -73,9 +90,19 @@ export class SkillScanner {
   private pending?: Promise<SkillScan>;
   private copying = false;
   private deleting = false;
-  constructor(private home: string, extraRoots: string[] = [], private probe: SkillProbe = discoverOpenCode) {
+  private merging = false;
+  private catalog: SkillCatalog;
+  private mergePlans = new Map<string, { keepId: string; ids: string[]; fingerprint: string }>();
+  private tidyPlan?: { token: string; expires: number; plans: Map<string, TidyPlanEntry> };
+  private onSecurityEvent?: SkillScannerOptions["onSecurityEvent"];
+  constructor(private home: string, extraRoots: string[] = [], private probe: SkillProbe = discoverOpenCode, options: SkillScannerOptions = {}) {
     this.home = path.resolve(home);
+    this.catalog = new SkillCatalog(this.home);
     for (const root of extraRoots) this.addRoot(root);
+    this.onSecurityEvent = options.onSecurityEvent;
+  }
+  private emitSecurity(event: SkillSecurityEvent) {
+    try { this.onSecurityEvent?.(event); } catch { /* 时间线写入失败不影响复制结果 */ }
   }
   addRoot(location: string) {
     if (!path.isAbsolute(location) || location.includes("\0")) throw new Error("请选择绝对目录路径");
@@ -98,12 +125,14 @@ export class SkillScanner {
     });
   }
   scan(): Promise<SkillScan> {
-    if (this.copying || this.deleting) return Promise.reject(new Error("Skill 文件操作进行中，请稍后扫描"));
+    if (this.copying || this.deleting || this.merging) return Promise.reject(new Error("Skill 文件操作进行中，请稍后扫描"));
     return this.pending ||= this.performScan().finally(() => { this.pending = undefined; });
   }
   private async performScan(): Promise<SkillScan> {
     this.plans.clear();
     this.deletePlans.clear();
+    this.mergePlans.clear();
+    this.tidyPlan = undefined;
     const discovered = new Set<string>();
     // 边界比较必须在真实路径空间进行：主目录本身可能经符号链接到达（如 macOS /var -> /private/var）
     const homeBoundary = await fs.realpath(this.home).catch(() => this.home);
@@ -222,6 +251,12 @@ export class SkillScanner {
     }
     await adviseSkills(this.home, result.items);
     await attachSkillUsage(this.home, result.items);
+    try {
+      await this.catalog.enrich(result.items);
+      applyUsageAdvice(result.items);
+    } catch (error) { result.catalogError = (error as Error).message; }
+    result.groups = groupSkills(result.items);
+    result.checkedAt = new Date().toISOString();
     try { result.trash = await listTrashedSkills(this.home); }
     catch (error) { result.trashError = (error as Error).message; }
     this.snapshot = new Map(result.items.map((item) => [item.id, item]));
@@ -298,7 +333,7 @@ export class SkillScanner {
     };
   }
   async preview(ids: string[], target: string): Promise<SkillCopyPreview> {
-    if (this.copying || this.deleting || this.pending) throw new Error("扫描或文件操作进行中，请稍后检查");
+    if (this.copying || this.deleting || this.merging || this.pending) throw new Error("扫描或文件操作进行中，请稍后检查");
     if (!Array.isArray(ids) || !ids.length || ids.length > MAX_COPY_FILES || new Set(ids).size !== ids.length) throw new Error("请选择不重复的 Skill（最多 500 项）");
     const destination = this.targets().find(item => item.id === target);
     if (!destination) throw new Error("不支持的目标工具");
@@ -307,6 +342,7 @@ export class SkillScanner {
     const expectedHashes = new Map<string, string>();
     const existingFingerprints = new Map<string, string>();
     const sourceByDestinationName = new Map<string, { hash: string; name: string }>();
+    const risks = new Map<string, SkillRiskReport>();
     const supported = destination.copySupported;
     for (const id of ids) {
       const item = this.snapshot.get(id);
@@ -336,6 +372,10 @@ export class SkillScanner {
           continue;
         }
         sourceByDestinationName.set(destinationName, { hash: expectedHash, name: item.name });
+        try {
+          // 只扫描真正会写入目标的文件（含自动修复后的内容）；目标已有旧版本时标出新增行
+          row.risk = await scanSkillFiles(prepared.output.entries.filter(entry => entry.kind === "file").map(entry => ({ relative: entry.relative, location: entry.source, content: entry.replacement })), final);
+        } catch (error) { row.warnings.push(`安全检查未完成：${(error as Error).message}`); }
         row.changes.push(...source.changes, ...prepared.repairs);
         row.warnings.push(...source.warnings);
         row.verification = await this.review(item.path, target, prepared.repairs.length > 0);
@@ -387,16 +427,36 @@ export class SkillScanner {
       } catch (error) { row.reason = (error as Error).message; }
     }
     this.plans.clear();
-    this.plans.set(preview.token, { ids: [...ids], target, expires: Date.now() + 10 * 60_000, hashes, expectedHashes, rows: new Map(preview.items.map(row => [row.id, row])), existingFingerprints });
+    for (const row of preview.items) {
+      if (row.risk?.level === "high" && (row.status === "ready" || row.status === "update" || row.status === "convert")) { row.riskAckRequired = true; risks.set(row.id, row.risk); }
+    }
+    preview.riskAckCount = risks.size;
+    preview.riskLevel = preview.items.reduce<NonNullable<SkillCopyPreview["riskLevel"]>>((top, row) => row.risk && RISK_ORDER[row.risk.level] > RISK_ORDER[top] ? row.risk.level : top, "none");
+    this.plans.set(preview.token, { ids: [...ids], target, expires: Date.now() + 10 * 60_000, hashes, expectedHashes, rows: new Map(preview.items.map(row => [row.id, row])), existingFingerprints, risks });
     return preview;
   }
-  async copy(ids: string[], target: string, token?: string, _autoConvert = false): Promise<SkillCopyResult[]> {
-    if (this.copying || this.deleting || this.pending) throw new Error("扫描或文件操作进行中，请稍后安装");
+  async copy(ids: string[], target: string, token?: string, _autoConvert = false, riskAcknowledged = false): Promise<SkillCopyResult[]> {
+    if (this.copying || this.deleting || this.merging || this.pending) throw new Error("扫描或文件操作进行中，请稍后安装");
     const destination = this.targets().find((item) => item.id === target);
     if (!destination) throw new Error("不支持的目标工具");
     if (!Array.isArray(ids) || ids.length > MAX_COPY_FILES) throw new Error("复制项目数量超过上限");
     const plan = token ? this.plans.get(token) : undefined;
     if (!plan || plan.expires < Date.now() || plan.target !== target || JSON.stringify(plan.ids) !== JSON.stringify(ids)) throw new Error("兼容检查已失效，请重新检查并确认");
+    // 主进程端风险闸门：不依赖前端勾选状态；未确认时保留检查计划，用户勾选后可直接重试
+    const gated = ids.filter(id => plan.risks.has(id));
+    if (gated.length) {
+      for (const id of gated) {
+        const summary = riskSummary(plan.risks.get(id)!);
+        this.emitSecurity({
+          operation: `复制 Skill「${this.snapshot.get(id)?.name ?? id}」到 ${destination.label}`,
+          decision: riskAcknowledged ? "allow" : "deny",
+          ruleId: summary.ruleId,
+          reason: riskAcknowledged ? `用户确认风险后放行：${summary.reason ?? "高风险指令"}` : `高风险 Skill 未经确认，已拒绝复制：${summary.reason ?? "高风险指令"}`,
+          project: destination.path,
+        });
+      }
+      if (!riskAcknowledged) throw new Error(`以下 Skill 含高风险指令，需勾选“我已了解风险，仍要安装”后才能复制：${gated.map(id => this.snapshot.get(id)?.name ?? id).join("、")}`);
+    }
     this.plans.delete(token!);
     this.copying = true;
     try {
@@ -529,7 +589,7 @@ export class SkillScanner {
     } finally { this.copying = false; }
   }
   async previewDelete(ids: string[]): Promise<SkillDeletePreview> {
-    if (this.copying || this.deleting || this.pending) throw new Error("扫描或文件操作进行中，请稍后检查");
+    if (this.copying || this.deleting || this.merging || this.pending) throw new Error("扫描或文件操作进行中，请稍后检查");
     if (!Array.isArray(ids) || !ids.length || ids.length > MAX_COPY_FILES || new Set(ids).size !== ids.length)
       throw new Error("请选择不重复的 Skill（最多 500 项）");
     const preview: SkillDeletePreview = { token: randomUUID(), items: [] };
@@ -547,7 +607,7 @@ export class SkillScanner {
         if (!cleanup.deletable) throw new Error(cleanup.reasons.join("；"));
         const children = [...this.snapshot.values()].filter(other => other.id !== id && other.path.startsWith(item.path + path.sep));
         if (children.length) throw new Error(`该目录还包含 ${children.length} 个独立 Skill；请先整理子目录，避免一并移走`);
-        const linked = [...this.snapshot.values()].filter(other => other.linkTarget === item.path);
+        const linked = [...this.snapshot.values()].filter(other => skillReferences(other, item));
         if (linked.length) row.cleanup = { ...cleanup, impact: [...cleanup.impact, `${linked.length} 个已扫描到的链接指向此目录，移走后这些链接会失效`] };
         fingerprints.set(id, (await deletionFingerprint(this.home, item.path)).fingerprint);
         row.status = "ready";
@@ -560,8 +620,73 @@ export class SkillScanner {
     });
     return preview;
   }
-  async deleteSkills(ids: string[], token: string): Promise<SkillDeleteResult[]> {
-    if (this.copying || this.deleting || this.pending) throw new Error("扫描或文件操作进行中，请稍后处理");
+  async skillPreference(id: string, kind: 'preserve' | 'ignore-risk', value: boolean) {
+    if (this.copying || this.deleting || this.merging || this.pending) throw new Error('扫描或文件操作进行中，请稍后设置');
+    const item = this.snapshot.get(id);
+    if (!item) throw new Error('仅允许设置最近扫描到的 Skill');
+    this.copying = true;
+    try { await this.catalog.preference(item, kind, value); }
+    finally { this.copying = false; }
+    return this.scan();
+  }
+  async compareSkills(left: string, right: string) {
+    if (this.copying || this.deleting || this.merging || this.pending) throw new Error('扫描或文件操作进行中，请稍后比较');
+    const a = this.snapshot.get(left), b = this.snapshot.get(right);
+    if (!a || !b || a.id === b.id) throw new Error('请选择两个不同的已扫描安装项');
+    this.copying = true;
+    try { return await compareSkillItems(a, b); }
+    finally { this.copying = false; }
+  }
+  private async validateMerge(keepId: string, ids: string[]) {
+    const keep = this.snapshot.get(keepId);
+    if (!keep || !ids.length || ids.includes(keepId) || !keep.insight?.hash || (keep.kind && keep.kind !== 'skill') || !keep.cleanup?.deletable)
+      throw new Error('请选择可管理的普通 Skill 作为保留副本');
+    const all = [keep, ...ids.map(id => this.snapshot.get(id))];
+    for (const item of all) {
+      if (!item || (item.kind && item.kind !== 'skill') || item.source !== keep.source || path.basename(item.path) !== path.basename(keep.path) || (item !== keep && item.insight?.preserved))
+        throw new Error('只允许整理同一工具、同一目录名的普通副本；跨工具副本和已保留项不会被移走');
+      if (!item.cleanup?.deletable || item.insight?.checkError || /[\\/]\.agents[\\/]/.test(item.path)) throw new Error('共享、安装源管理或未完成完整性检查的目录不能合并清理');
+      if ((await analyzeSkillTree(item.path)).hash !== keep.insight.hash) throw new Error('副本内容或权限不同，或已变化；请重新扫描并查看差异');
+      if (item !== keep && [...this.snapshot.values()].some(other => skillReferences(other, item))) throw new Error('待移动目录存在链接或子 Skill 引用，不能合并清理');
+    }
+    return keep;
+  }
+  async previewMerge(keepId: string, ids: string[]): Promise<SkillDeletePreview> {
+    if (this.copying || this.deleting || this.merging || this.pending) throw new Error('扫描或文件操作进行中');
+    const keep = await this.validateMerge(keepId, ids);
+    const preview = await this.previewDelete(ids);
+    if (preview.items.some(row => row.status !== 'ready')) throw new Error('部分副本不能安全移动，请查看清理依据');
+    preview.retained = { id: keep.id, name: keep.name, path: keep.path };
+    this.mergePlans.clear();
+    this.mergePlans.set(preview.token, { keepId, ids: [...ids], fingerprint: (await deletionFingerprint(this.home, keep.path)).fingerprint });
+    return preview;
+  }
+  async mergeSkills(keepId: string, ids: string[], token: string): Promise<SkillDeleteResult[]> {
+    if (this.copying || this.deleting || this.merging || this.pending) throw new Error('扫描或文件操作进行中');
+    const merge = this.mergePlans.get(token);
+    if (!merge || merge.keepId !== keepId || JSON.stringify(merge.ids) !== JSON.stringify(ids)) throw new Error('合并预检已失效，请重新检查');
+    this.merging = true;
+    try {
+      const keep = await this.validateMerge(keepId, ids);
+      if ((await deletionFingerprint(this.home, keep.path)).fingerprint !== merge.fingerprint) throw new Error('保留副本已变化，请重新检查');
+      this.mergePlans.clear();
+      const originals = new Map(ids.map(id => [id, this.snapshot.get(id)!]));
+      const results = await this.deleteSkills(ids, token, true);
+      if (results.some(row => row.status !== 'trashed')) {
+        for (const row of results.filter(row => row.trashId)) {
+          try {
+            await restoreTrashedSkill(this.home, row.trashId!);
+            this.snapshot.set(row.id, originals.get(row.id)!);
+            row.status = 'failed'; row.message = '本组整理未全部完成，已恢复此副本'; row.trashId = undefined;
+          } catch (error) { row.message = `本组未完成，恢复失败：${(error as Error).message}；仍可在回收区恢复`; }
+        }
+      }
+      this.emitSecurity({ operation: 'Skill 重复副本整理', decision: 'allow', reason: `保留 ${keep.path}；${results.filter(row => row.status === 'trashed').length} 项移入可恢复回收区` });
+      return results;
+    } finally { this.merging = false; }
+  }
+  async deleteSkills(ids: string[], token: string, mergeInternal = false): Promise<SkillDeleteResult[]> {
+    if (this.copying || this.deleting || (this.merging && !mergeInternal) || this.pending) throw new Error("扫描或文件操作进行中，请稍后处理");
     const plan = this.deletePlans.get(token);
     if (!plan || plan.expires < Date.now() || JSON.stringify(plan.ids) !== JSON.stringify(ids))
       throw new Error("删除预检已失效，请重新检查具体路径");
@@ -587,7 +712,7 @@ export class SkillScanner {
     } finally { this.deleting = false; }
   }
   async restoreSkill(id: string) {
-    if (this.copying || this.deleting || this.pending) throw new Error("扫描或文件操作进行中，请稍后恢复");
+    if (this.copying || this.deleting || this.merging || this.pending) throw new Error("扫描或文件操作进行中，请稍后恢复");
     this.deleting = true;
     try {
       const restored = await restoreTrashedSkill(this.home, id);
@@ -595,5 +720,47 @@ export class SkillScanner {
       this.deletePlans.clear();
       return restored;
     } finally { this.deleting = false; }
+  }
+  /** 整理建议：基于最近一次扫描结果做只读分析，返回带令牌的执行计划 */
+  async tidyReport(): Promise<SkillTidyReport> {
+    if (this.copying || this.deleting || this.merging || this.pending) throw new Error("扫描或文件操作进行中，请稍后再试");
+    if (!this.snapshot.size) throw new Error("请先扫描 Skill");
+    this.merging = true;
+    try {
+      const analysis = await analyzeTidy(this.home, [...this.snapshot.values()]);
+      const token = randomUUID();
+      this.tidyPlan = { token, expires: Date.now() + 10 * 60_000, plans: analysis.plans };
+      return { token, checkedAt: new Date().toISOString(), scenarios: analysis.scenarios, moves: await listSkillMoves(this.home), notes: analysis.notes };
+    } finally { this.merging = false; }
+  }
+  async applyTidy(ids: string[], token: string): Promise<SkillTidyResult[]> {
+    if (this.copying || this.deleting || this.merging || this.pending) throw new Error("扫描或文件操作进行中，请稍后再试");
+    const plan = this.tidyPlan;
+    if (!plan || plan.token !== token || plan.expires < Date.now()) throw new Error("整理建议已过期，请重新生成后再确认");
+    if (!ids.length || new Set(ids).size !== ids.length) throw new Error("请选择不重复的整理项");
+    const unknown = ids.filter(id => !plan.plans.has(id));
+    if (unknown.length) throw new Error("所选项目不在本次可执行的整理建议中，请重新生成");
+    this.tidyPlan = undefined;
+    this.merging = true;
+    try {
+      const results: SkillTidyResult[] = [];
+      for (const id of ids) results.push(await applyTidyPlan(this.home, plan.plans.get(id)!));
+      this.plans.clear();
+      this.deletePlans.clear();
+      this.mergePlans.clear();
+      const done = results.filter(row => row.status === "done");
+      if (done.length) this.emitSecurity({ operation: "Skill 整理建议", decision: "allow", reason: done.map(row => `${row.kind === "legacy-codex" && row.destination ? `迁移 ${row.path} → ${row.destination}` : `移入回收区 ${row.path}`}`).join("；") });
+      return results;
+    } finally { this.merging = false; }
+  }
+  async revertMove(id: string): Promise<SkillMoveRecord> {
+    if (this.copying || this.deleting || this.merging || this.pending) throw new Error("扫描或文件操作进行中，请稍后再试");
+    this.merging = true;
+    try {
+      const record = await revertSkillMove(this.home, id);
+      this.tidyPlan = undefined;
+      this.emitSecurity({ operation: "撤销 Skill 迁移", decision: "allow", reason: `${record.to} → ${record.from}` });
+      return record;
+    } finally { this.merging = false; }
   }
 }

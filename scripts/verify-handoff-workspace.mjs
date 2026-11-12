@@ -98,10 +98,12 @@ try {
   assert(prompt.includes('CONTEXT_MARKER') && prompt.includes(workspace));
   assert(!prompt.includes('fixture-secret-value'));
   assert(prompt.includes('[已脱敏]'));
+  for (const check of await dialog.locator('.handoff-confirmations input').all()) await check.uncheck();
   await expect(dialog.getByRole('button', { name: '确认并复制接续内容' })).toBeDisabled();
   for (const check of await dialog.locator('.handoff-confirmations input').all()) await check.check();
   await dialog.getByRole('button', { name: '确认并复制接续内容' }).click();
-  await expect(dialog.getByRole('status')).toContainText('已复制，接下来粘贴到 Claude Code');
+  await expect(dialog.getByRole('status')).toContainText('接续内容已复制到剪贴板');
+  await expect(dialog.getByRole('status')).toContainText('Claude Code');
   const clipboardText = await app.evaluate(({ clipboard }) => clipboard.readText());
   assert.equal(clipboardText, prompt, 'clipboard must exactly equal the reviewed preview');
   await fs.writeFile(path.join(temporary, 'to-claude.txt'), clipboardText);
@@ -153,7 +155,11 @@ try {
     catch { return true; }
   });
   assert(badOptions);
+  await expect(page.getByRole('button', { name: '刷新', exact: true })).toBeEnabled();
   await page.getByRole('tab', { name: /^Codex/ }).click();
+  await page.getByRole('navigation', { name: '项目分类' }).getByRole('button', { name: /全部项目/ }).click();
+  await expect(page.getByRole('button', { name: '刷新', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
   await expect(page.locator('.handoff-task')).toHaveCount(2);
   await page.setViewportSize({ width: 1024, height: 720 });
   await page.getByRole('button', { name: '接续', exact: true }).first().click();

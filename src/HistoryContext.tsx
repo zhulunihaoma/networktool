@@ -58,7 +58,7 @@ export default function HistoryContext({
         {archive.records.toLocaleString()} 条原始事件
       </h3>
       <p>
-        按片段核对历史。完整原始上下文可选导出，不影响复制对话文字；原始记录与附件未经脱敏，导出前需人工检查。
+        仅继续对话？直接生成接续预览即可，无需导出原始记录。需要核对工具过程和完整事件时，再选择下方原始上下文导出。
       </p>
       {conversation && (
         <div className="handoff-actions">
@@ -150,19 +150,20 @@ export default function HistoryContext({
           disabled={busy}
           onChange={(e) => setReviewed(e.target.checked)}
         />
-        已确认导出原始上下文未经脱敏，仅保存到本机所选目录
+        已检查原始上下文与附件，了解其未经脱敏，仅保存到本机所选目录
       </label>
       <button
         className="secondary"
         disabled={busy || !reviewed}
         onClick={onExport}
       >
-        导出完整上下文
+        仅导出原始上下文
       </button>
       {exported && (
         <p role="status">
-          已导出：<code>{exported}</code>。附件原件覆盖状态见
-          manifest；仅复制说明不会上传文件。
+          原始上下文已保存：<code>{exported}</code>
+          。携带会话历史生成接续预览时，会附上此目录路径；确认复制后再去目标工具粘贴。附件覆盖情况见
+          manifest.json。
         </p>
       )}
     </section>

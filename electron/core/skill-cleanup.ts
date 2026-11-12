@@ -102,7 +102,7 @@ export async function adviseSkills(home: string, items: SkillItem[]): Promise<vo
   }
 }
 
-async function rejectLinkedAncestors(home: string, location: string): Promise<void> {
+export async function rejectLinkedAncestors(home: string, location: string): Promise<void> {
   let current = path.resolve(home);
   const relative = path.relative(current, path.dirname(location));
   if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("路径不在当前用户主目录中");
@@ -126,40 +126,67 @@ export async function deletionFingerprint(home: string, location: string): Promi
 
 function trashRoot(home: string) { return path.join(home, TRASH_FOLDER); }
 
-async function ensureTrashRoot(home: string): Promise<string> {
+/** 确保 ~/.network-lens（及可选子目录）是普通目录，不跟随链接 */
+export async function ensureNetworkLensDir(home: string, ...children: string[]): Promise<string> {
   const parent = path.join(home, ".network-lens");
-  for (const location of [parent, trashRoot(home)]) {
+  const chain = [parent];
+  for (const child of children) chain.push(path.join(chain[chain.length - 1], child));
+  for (const location of chain) {
     try {
       const stat = await fs.lstat(location);
-      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`回收区上级路径不是普通目录：${location}`);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`本工具数据目录不是普通目录：${location}`);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       await fs.mkdir(location, { mode: 0o700 });
     }
   }
-  return trashRoot(home);
+  return chain[chain.length - 1];
 }
 
-export async function moveSkillToTrash(home: string, item: SkillItem, fingerprint: string): Promise<SkillTrashEntry> {
-  const current = await deletionFingerprint(home, item.path);
-  if (current.fingerprint !== fingerprint) throw new Error("Skill 路径、文件内容或权限在预检后发生变化，请重新检查");
+async function ensureTrashRoot(home: string): Promise<string> {
+  return ensureNetworkLensDir(home, "skill-trash");
+}
+
+async function placeInTrash(home: string, location: string, entryFields: Omit<SkillTrashEntry, "id" | "deletedAt">): Promise<SkillTrashEntry> {
   const root = await ensureTrashRoot(home);
   const id = randomUUID();
   const record = path.join(root, id);
-  const entry: SkillTrashEntry = {
-    id, name: item.name, originalPath: item.path, deletedAt: new Date().toISOString(), source: item.source, kind: current.kind,
-  };
+  const entry: SkillTrashEntry = { id, deletedAt: new Date().toISOString(), ...entryFields };
   await fs.mkdir(record, { mode: 0o700 });
   try {
     await fs.writeFile(path.join(record, "manifest.json"), JSON.stringify(entry), { flag: "wx", mode: 0o600 });
     // Rename is atomic on one filesystem. A cross-device source remains untouched.
-    await fs.rename(item.path, path.join(record, "item"));
+    await fs.rename(location, path.join(record, "item"));
     return entry;
   } catch (error) {
     await fs.rm(record, { recursive: true, force: true }).catch(() => {});
     if ((error as NodeJS.ErrnoException).code === "EXDEV") throw new Error("来源与回收区不在同一文件系统，无法安全移动；原 Skill 保持原位");
     throw error;
   }
+}
+
+export async function moveSkillToTrash(home: string, item: SkillItem, fingerprint: string): Promise<SkillTrashEntry> {
+  const current = await deletionFingerprint(home, item.path);
+  if (current.fingerprint !== fingerprint) throw new Error("Skill 路径、文件内容或权限在预检后发生变化，请重新检查");
+  return placeInTrash(home, item.path, { name: item.name, originalPath: item.path, source: item.source, kind: current.kind });
+}
+
+/**
+ * 整理建议使用：调用方已自行核对变化。工具管理目录（如 WisCode 投射目录）只在 protectedRoot 显式声明时允许，
+ * 并在回收记录中保留该标记，使恢复仍可写回原位置。
+ */
+export async function trashManagedPath(home: string, location: string, meta: { name: string; source: string; protectedRoot?: boolean }): Promise<SkillTrashEntry> {
+  const managed = managedSkillLocation(home, location);
+  if (!managed || path.basename(location).startsWith(".")) throw new Error("此路径不属于可管理的用户级 Skill 目录");
+  if (managed.protected && !meta.protectedRoot) throw new Error(`${managed.root} 由工具管理，未获准移动`);
+  await rejectLinkedAncestors(home, location);
+  const stat = await fs.lstat(location);
+  const kind = stat.isSymbolicLink() ? "link" : stat.isDirectory() ? "directory" : undefined;
+  if (!kind) throw new Error("Skill 路径既不是目录也不是符号链接");
+  return placeInTrash(home, location, {
+    name: meta.name, originalPath: location, source: meta.source, kind,
+    ...(managed.protected ? { protectedRoot: true } : {}),
+  });
 }
 
 async function readTrashEntry(home: string, id: string): Promise<SkillTrashEntry | undefined> {
@@ -175,7 +202,8 @@ async function readTrashEntry(home: string, id: string): Promise<SkillTrashEntry
   const row = parsed as Partial<SkillTrashEntry>;
   if (row.id !== id || typeof row.name !== "string" || typeof row.originalPath !== "string"
     || typeof row.deletedAt !== "string" || typeof row.source !== "string"
-    || (row.kind !== "directory" && row.kind !== "link") || !managedSkillLocation(home, row.originalPath)) return;
+    || (row.kind !== "directory" && row.kind !== "link") || !managedSkillLocation(home, row.originalPath)
+    || (row.protectedRoot !== undefined && row.protectedRoot !== true)) return;
   await fs.lstat(path.join(record, "item"));
   return row as SkillTrashEntry;
 }
@@ -197,7 +225,7 @@ export async function restoreTrashedSkill(home: string, id: string): Promise<Ski
   const entry = await readTrashEntry(home, id);
   if (!entry) throw new Error("回收区记录不存在或已损坏");
   const managed = managedSkillLocation(home, entry.originalPath);
-  if (!managed || managed.protected) throw new Error("原目录不再属于可恢复的用户级 Skill 目录");
+  if (!managed || (managed.protected && !entry.protectedRoot)) throw new Error("原目录不再属于可恢复的用户级 Skill 目录");
   await rejectLinkedAncestors(home, entry.originalPath);
   try {
     await fs.lstat(entry.originalPath);

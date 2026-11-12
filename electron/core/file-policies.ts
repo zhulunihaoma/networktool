@@ -13,11 +13,12 @@ import type {
   FileAlert,
   AuditPage,
 } from "../../src/shared/assistant";
-interface LocalScope extends FileScope {
+export interface LocalScope extends FileScope {
   root: string;
   manualPaths?: string[];
 }
-interface State {
+export interface State {
+  workflow?: import("../../src/shared/file-workflow").FileWorkflowData;
   scopes: LocalScope[];
   events: AuditEvent[];
   alerts: FileAlert[];
@@ -47,7 +48,7 @@ export function candidateReason(relative: string): string | undefined {
     return "名称提示客户或财务数据（候选）";
   return undefined;
 }
-const identity = (stat: Awaited<ReturnType<typeof fs.lstat>>) =>
+export const identity = (stat: Awaited<ReturnType<typeof fs.lstat>>) =>
   `${stat.dev}:${stat.ino}:${stat.birthtimeMs}:${stat.mtimeMs}:${stat.size}`;
 export async function scanCandidates(
   root: string,
@@ -158,7 +159,7 @@ export async function scanCandidates(
 export class FilePolicies {
   private scanController?: AbortController;
   constructor(private store: Pick<Store, "assistant" | "putAssistant">) {}
-  private state() {
+  protected state() {
     return this.store.assistant<State>("files", initial());
   }
   workspace(): FileWorkspace {
@@ -184,7 +185,10 @@ export class FilePolicies {
       },
     };
   }
-  private record(state: State, event: Omit<AuditEvent, "id" | "seq" | "time">) {
+  protected record(
+    state: State,
+    event: Omit<AuditEvent, "id" | "seq" | "time">,
+  ) {
     const record = {
       ...event,
       id: randomUUID(),
@@ -194,7 +198,7 @@ export class FilePolicies {
     state.events.push(record);
     return record;
   }
-  private persist(state: State) {
+  protected persist(state: State) {
     // Fail visibly rather than discard evidence when this initial storage budget is exhausted.
     if (state.events.length > 10000 || state.alerts.length > 2000)
       throw new Error(
@@ -245,12 +249,39 @@ export class FilePolicies {
           (c) => c.relativePath === candidate.relativePath,
         );
         // Reuse resource identity only if the physical file and its version are unchanged.
-        if (old?.identity === candidate.identity) candidate.id = old.id;
-        else if (old) changed++;
+        if (old?.identity === candidate.identity) {
+          candidate.id = old.id;
+          candidate.review = old.review;
+        } else if (old) {
+          changed++;
+          if (
+            previous?.policies.some((p) => p.resourceId === old.id && p.enabled)
+          ) {
+            candidate.id = old.id;
+            candidate.identity = old.identity;
+            candidate.review = "stale";
+          }
+        }
+      }
+      // Keep protected paths even when missing, skipped, or hidden by a scan budget.
+      for (const old of previous?.candidates || []) {
+        if (
+          !scanned.candidates.some(
+            (c) => c.relativePath === old.relativePath,
+          ) &&
+          previous?.policies.some((p) => p.resourceId === old.id && p.enabled)
+        ) {
+          scanned.candidates.push({
+            ...old,
+            review: "stale",
+            reason: "文件未发现或未完成扫描；原规则保留，请检查后重新确认。",
+          });
+          changed++;
+        }
       }
       if (changed)
         warnings.push(
-          `${changed} 个候选文件已变更或替换，原精确规则不再绑定，请重新确认。`,
+          `${changed} 个候选文件已变更或替换，原规则保留并暂停访问，请重新确认。`,
         );
       const scope: LocalScope = {
         ...scanned,
@@ -287,7 +318,7 @@ export class FilePolicies {
     if (!scope) throw new Error("范围不存在。");
     return scope.root;
   }
-  private async manualCandidate(
+  protected async manualCandidate(
     root: string,
     relativePath: string,
   ): Promise<FileCandidate> {
@@ -328,7 +359,17 @@ export class FilePolicies {
     const old = scope.candidates.find((c) => c.relativePath === relative);
     if (!old && scope.candidates.length >= 500)
       throw new Error("候选已达 500 个，请缩小范围。");
-    if (old?.identity === candidate.identity) candidate.id = old.id;
+    if (old?.identity === candidate.identity) {
+      candidate.id = old.id;
+      candidate.review = old.review;
+    } else if (
+      old &&
+      scope.policies.some((p) => p.resourceId === old.id && p.enabled)
+    ) {
+      candidate.id = old.id;
+      candidate.identity = old.identity;
+      candidate.review = "stale";
+    }
     scope.candidates = [
       ...scope.candidates.filter((c) => c.relativePath !== relative),
       candidate,
@@ -381,6 +422,17 @@ export class FilePolicies {
     this.persist(state);
     return this.workspace();
   }
+  protected policyDecision(
+    state: State,
+    scopeId: string,
+    resourceId: string,
+    operation: FileOperation,
+  ) {
+    const policy = state.scopes
+      .find((s) => s.id === scopeId)
+      ?.policies.find((p) => p.resourceId === resourceId);
+    return policy?.enabled ? policy[operation] || "deny" : "ask";
+  }
   async evaluate(
     scopeId: string,
     resourceId: string,
@@ -411,11 +463,9 @@ export class FilePolicies {
       (p) => p.resourceId === resourceId,
     );
     const decision =
-      stale || candidate.unsupported
+      stale || candidate.unsupported || candidate.review === "stale"
         ? "deny"
-        : policy?.enabled
-          ? policy[operation]
-          : "ask";
+        : this.policyDecision(state, scopeId, resourceId, operation);
     const event = this.record(state, {
       scopeId,
       resourceId,

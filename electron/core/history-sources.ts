@@ -18,6 +18,11 @@ import type {
 } from "../../src/shared/history";
 import { sanitizer } from "../../src/shared/handoff";
 import {
+  codexSpawn,
+  readableTitle,
+  subagentTitle,
+} from "./history-titles";
+import {
   entries,
   walk,
   exists,
@@ -68,6 +73,9 @@ export class HistorySources {
     const tasks = new Map<string, HistoryRecord>(),
       projects = new Map<string, SourceProject>(),
       projectInstances = new Map<string, string>(),
+      projectOrders = new Map<string, number>(),
+      projectActivity = new Map<string, number>(),
+      supplementalProjects = new Set<string>(),
       gaps: string[] = [];
     let nativeProjects = false,
       stores = 0;
@@ -158,7 +166,7 @@ export class HistorySources {
         id,
         nativeId,
         instance: inst,
-        title: clean.clean(title || "无标题对话"),
+        title: clean.clean(readableTitle(title) || "无标题对话"),
         directory: clean.clean(dir),
         updated,
         kind: "conversation",
@@ -183,6 +191,32 @@ export class HistorySources {
     const bases = (name: string, defaults: string[]) => [
       ...new Set([...defaults, ...(this.extra[name] || [])]),
     ];
+    const recentWorkspaces = async (user: string) => {
+      const order = new Map<string, number>(),
+        file = path.join(user, "globalStorage/state.vscdb");
+      if (await exists(file))
+        await attempt("工作区原生顺序", () =>
+          sourceDatabase(file, (db) => {
+            if (!tables(db).has("ItemTable")) return;
+            const row = db
+              .prepare(
+                "SELECT value FROM ItemTable WHERE key='history.recentlyOpenedPathsList'",
+              )
+              .get();
+            if (!row) return;
+            const data = JSON.parse(String(row.value));
+            for (const entry of data.entries || []) {
+              const uri =
+                str(entry.folderUri) || str(entry.workspace?.configPath);
+              if (uri) {
+                const dir = uri.startsWith("file:") ? fileURLToPath(uri) : uri;
+                if (!order.has(dir)) order.set(dir, order.size);
+              }
+            }
+          }),
+        );
+      return order;
+    };
     const kind = (r: Record<string, any>): HistoryKind =>
       r.deleted || r.time_deleted || r.cli_deleted
         ? "deleted"
@@ -281,6 +315,10 @@ export class HistorySources {
       }
     };
     const scanCodex = async (root: string) => {
+      const native = new Map<string, string>(),
+        nativeOrder = new Map<string, number>(),
+        appServerIds = new Map<string, string>(),
+        assignments = new Map<string, string>();
       const inst = instance(root, "codex"),
         files = await entries(root),
         candidates = files
@@ -298,46 +336,109 @@ export class HistorySources {
         const state = await json(file),
           persisted = state["electron-persisted-atom-state"] || {},
           values = state["local-projects"] || persisted["local-projects"] || {};
+        const get = (key: string) => state[key] ?? persisted[key];
+        const unified = get("unified-sidebar-project-order-v1"),
+          order = Array.isArray(unified)
+            ? unified
+                .filter(
+                  (id: unknown) =>
+                    typeof id === "string" && id.startsWith("codex:project:"),
+                )
+                .map((id: string) => id.slice("codex:project:".length))
+            : get("project-order");
+        if (Array.isArray(order))
+          order.forEach((id, index) => {
+            if (typeof id === "string") nativeOrder.set(id, index);
+          });
+        const mapping = get(
+          "app-server-project-id-by-legacy-project-id-by-host",
+        )?.[`local:${root}`];
+        if (object(mapping))
+          for (const [legacy, id] of Object.entries(mapping))
+            if (typeof id === "string") appServerIds.set(legacy, id);
         for (const [id, v] of Object.entries(values))
           if (object(v) && Array.isArray(v.rootPaths)) {
-            project(
-              inst,
-              str(v.id) || id,
-              str(v.name),
-              v.rootPaths.filter((v: unknown) => typeof v === "string"),
-            );
+            const legacy = str(v.id) || id,
+              server = appServerIds.get(legacy),
+              pid = project(
+                inst,
+                server || legacy,
+                str(v.name),
+                v.rootPaths.filter((v: unknown) => typeof v === "string"),
+              );
+            native.set(legacy, pid);
+            const p = projects.get(pid)!;
+            p.nativeIds = [...new Set([...(p.nativeIds || []), legacy])];
+            if (server) native.set(server, pid);
+            const rank =
+              nativeOrder.get(legacy) ??
+              nativeOrder.get(id) ??
+              (server ? nativeOrder.get(server) : undefined);
+            if (rank !== undefined) projectOrders.set(pid, rank);
             nativeProjects = true;
           }
-        for (const dir of state["electron-saved-workspace-roots"] ||
-          persisted["electron-saved-workspace-roots"] ||
-          [])
-          if (typeof dir === "string")
-            project(inst, dir, path.basename(dir), [dir], true, true);
+        const assigned = get("thread-project-assignments");
+        if (object(assigned))
+          for (const [id, value] of Object.entries(assigned))
+            if (object(value) && typeof value.projectId === "string")
+              assignments.set(id, value.projectId);
+        for (const dir of get("electron-saved-workspace-roots") || [])
+          if (typeof dir === "string") {
+            const pid = project(
+              inst,
+              dir,
+              path.basename(dir),
+              [dir],
+              true,
+              true,
+            );
+            native.set(dir, pid);
+          }
       });
       if (dbfile)
         await attempt("Codex 状态索引", async () => {
           stores++;
           await sourceDatabase(dbfile, (db) => {
-            const ts = tables(db),
-              native = new Map<string, string>();
+            const ts = tables(db);
             if (ts.has("projects") && ts.has("project_roots")) {
               nativeProjects = true;
+              const roots = new Map<string, string[]>();
               for (const r of db
-                .prepare(
-                  "SELECT p.id,p.name,r.path FROM projects p LEFT JOIN project_roots r ON r.project_id=p.id",
-                )
+                .prepare("SELECT project_id,path FROM project_roots")
                 .iterate())
-                native.set(
-                  String(r.id),
-                  project(
-                    inst,
-                    String(r.id),
-                    str(r.name),
-                    [str(r.path)],
-                    true,
-                    true,
-                  ),
-                );
+                roots.set(String(r.project_id), [
+                  ...(roots.get(String(r.project_id)) || []),
+                  str(r.path),
+                ]);
+              for (const r of db.prepare("SELECT * FROM projects").iterate()) {
+                const id = String(r.id),
+                  legacy = [...appServerIds].find(
+                    ([, server]) => server === id,
+                  )?.[0],
+                  known = native.get(id),
+                  pid =
+                    known ||
+                    project(
+                      inst,
+                      id,
+                      str(r.name),
+                      roots.get(id) || [],
+                      true,
+                      !appServerIds.size,
+                    );
+                native.set(id, pid);
+                if (legacy) native.set(legacy, pid);
+                if (known) {
+                  const p = projects.get(pid)!;
+                  p.directories = [
+                    ...new Set([...p.directories, ...(roots.get(id) || [])]),
+                  ];
+                }
+                const rank =
+                  nativeOrder.get(legacy || id) ?? nativeOrder.get(id);
+                if (rank !== undefined || typeof r.position === "number")
+                  projectOrders.set(pid, rank ?? Number(r.position));
+              }
             }
             if (!ts.has("threads")) {
               gaps.push("Codex 数据库缺少 threads，需适配当前版本。");
@@ -348,7 +449,28 @@ export class HistorySources {
               gaps.push("Codex 会话索引缺少 ID。");
               return;
             }
-            for (const r of db.prepare("SELECT * FROM threads").iterate()) {
+            const threadRows = [...db.prepare("SELECT * FROM threads").iterate()],
+              // Subagent forks store neither name, title nor preview; their role
+              // lives in `source.subagent.thread_spawn`, so both passes need the
+              // whole table before any row is indexed.
+              ownTitle = new Map<string, string>();
+            for (const r of threadRows)
+              ownTitle.set(
+                String(r.id),
+                readableTitle(
+                  str(r.name) ||
+                    str(r.title) ||
+                    str(r.preview) ||
+                    // WisCode's state index leaves name/title/preview empty;
+                    // the first prompt is the only stored prose.
+                    str(r.first_user_message),
+                ),
+              );
+            for (const r of threadRows) {
+              const spawn = codexSpawn(r.source, r.agent_path, r.agent_nickname),
+                parent = spawn?.parentThreadId
+                  ? ownTitle.get(spawn.parentThreadId)
+                  : undefined;
               const k: HistoryKind = r.archived
                 ? "archived"
                 : /guardian|subagent|review|compact/i.test(
@@ -361,7 +483,8 @@ export class HistorySources {
               add(
                 inst,
                 String(r.id),
-                str(r.name) || str(r.title) || str(r.preview),
+                ownTitle.get(String(r.id)) ||
+                  (k === "subagent" ? subagentTitle(spawn, parent) : ""),
                 str(r.cwd),
                 Number(r.updated_at_ms) || Number(r.updated_at) * 1000 || 0,
                 {
@@ -375,7 +498,15 @@ export class HistorySources {
                     ? [fileRef(str(r.rollout_path), root)]
                     : [],
                 },
-                { kind: k, projectId: native.get(str(r.project_id)) },
+                {
+                  kind: k,
+                  ...(spawn?.parentThreadId
+                    ? { parentId: String(spawn.parentThreadId) }
+                    : {}),
+                  projectId: native.get(
+                    assignments.get(String(r.id)) || str(r.project_id),
+                  ),
+                },
               );
             }
           });
@@ -416,14 +547,23 @@ export class HistorySources {
                 refs.push(fileRef(f, root));
               return;
             }
-            const ask = records.find(
-              (r) =>
-                r.type === "event_msg" && r.payload?.type === "user_message",
-            )?.payload?.message;
+            const ask = records
+              .filter((r) => r.type === "event_msg" && r.payload?.type === "user_message")
+              .map((r) => readableTitle(r.payload?.message))
+              .find(Boolean);
+            const subagent = /subagent|guardian|review/i.test(
+              JSON.stringify(meta.source),
+            );
             add(
               inst,
               logId,
-              str(ask).replace(/\s+/g, " ").slice(0, 500),
+              readableTitle(ask) ||
+                (subagent
+                  ? subagentTitle(
+                      codexSpawn(meta.source, meta.agent_path, meta.agent_nickname),
+                      tasks.get(taskId(inst, str(meta.id)))?.title || "",
+                    )
+                  : ""),
               str(meta.cwd),
               (await fs.stat(f)).mtimeMs,
               {
@@ -443,9 +583,7 @@ export class HistorySources {
                 kind:
                   name === "archived_sessions"
                     ? "archived"
-                    : /subagent|guardian|review/i.test(
-                          JSON.stringify(meta.source),
-                        )
+                    : subagent
                       ? "subagent"
                       : "orphan",
               },
@@ -476,16 +614,26 @@ export class HistorySources {
                   const id = String(r.project_id);
                   roots.set(id, [...(roots.get(id) || []), str(r.root_path)]);
                 }
-                for (const r of db.prepare("SELECT * FROM projects").iterate())
+                const rows = [...db.prepare("SELECT * FROM projects").iterate()]
+                  .filter((r) => !r.deleted)
+                  .sort(
+                    (a, b) =>
+                      Number(!!b.pinned) - Number(!!a.pinned) ||
+                      Number(a.position || 0) - Number(b.position || 0),
+                  );
+                for (const [index, r] of rows.entries()) {
+                  const pid = project(
+                    instance(root, String(r.host_id || "local")),
+                    String(r.project_id),
+                    str(r.name),
+                    roots.get(String(r.project_id)) || [],
+                  );
+                  projectOrders.set(pid, index);
                   projectIds.set(
                     `${r.host_id || "local"}:${r.project_id}`,
-                    project(
-                      instance(root, String(r.host_id || "local")),
-                      String(r.project_id),
-                      str(r.name),
-                      roots.get(String(r.project_id)) || [],
-                    ),
+                    pid,
                   );
+                }
               }
               if (ts.has("tasks"))
                 for (const r of db.prepare("SELECT * FROM tasks").iterate())
@@ -587,16 +735,25 @@ export class HistorySources {
                     ...(dirs.get(String(r.project_id)) || []),
                     str(r.directory),
                   ]);
-              for (const r of db.prepare("SELECT * FROM project").iterate())
-                ps.set(
+              const rows = [
+                ...db.prepare("SELECT * FROM project").iterate(),
+              ].sort(
+                (a, b) =>
+                  Number(b.time_active ?? b.time_updated ?? 0) -
+                    Number(a.time_active ?? a.time_updated ?? 0) ||
+                  String(a.id).localeCompare(String(b.id)),
+              );
+              for (const [index, r] of rows.entries()) {
+                const pid = project(
+                  inst,
                   String(r.id),
-                  project(
-                    inst,
-                    String(r.id),
-                    str(r.name) || path.basename(str(r.worktree)),
-                    [str(r.worktree), ...(dirs.get(String(r.id)) || [])],
-                  ),
+                  str(r.name) || path.basename(str(r.worktree)),
+                  [str(r.worktree), ...(dirs.get(String(r.id)) || [])],
                 );
+                ps.set(String(r.id), pid);
+                projectOrders.set(pid, index);
+                if (r.time_archived) supplementalProjects.add(pid);
+              }
             }
             for (const table of ["session", "session_v2"]) {
               if (!ts.has(table)) continue;
@@ -647,6 +804,12 @@ export class HistorySources {
         await attempt("Codex", () => scanCodex(root));
     else if (source === "WisCode") {
       for (const root of bases(source, [path.join(this.home, ".wiscode")])) {
+        const engineInstances = new Set([
+          instance(path.join(root, "claude/projects"), "claude"),
+          instance(path.join(root, "claude-agents/projects"), "claude"),
+          instance(path.join(root, "codex-agents"), "codex"),
+          instance(root, "native"),
+        ]);
         for (const name of ["claude", "claude-agents"])
           await attempt(`WisCode ${name}`, () =>
             scanClaude(path.join(root, name, "projects")),
@@ -657,17 +820,81 @@ export class HistorySources {
         const native = path.join(root, "auth.db"),
           inst = instance(root, "native"),
           projectIds = new Map<string, string>(),
-          remapped = new Map<string, string>();
+          remapped = new Map<string, string>(),
+          nativeRows = new Map<string, Record<string, any>>(),
+          worktrees = new Map<string, string>();
+        let uiOrder: Record<string, any> = {};
+        await attempt("WisCode 侧边栏顺序", async () => {
+          const file = path.join(root, "settings.json");
+          if (await exists(file))
+            uiOrder =
+              (await json(file)).sharedSidebarPreferences?.uiOrder || {};
+        });
+        const normalize = (dir: string) =>
+          dir ? path.normalize(dir).replace(/[\\/]+$/, "") : "";
+        const resolveProject = (directory: string) => {
+          const dir = normalize(directory);
+          const worktree = [...worktrees.keys()]
+            .sort((a, b) => b.length - a.length)
+            .find((base) => dir === base || dir.startsWith(base + path.sep));
+          const sourceDir = worktree
+            ? worktrees.get(worktree)!
+            : dir.split(`${path.sep}.claude${path.sep}worktrees${path.sep}`)[0];
+          return projectIds.get(sourceDir) || projectIds.get(dir);
+        };
+        const wisTime = (value: unknown) => {
+          if (typeof value === "number" || /^\d{10,13}$/.test(str(value))) {
+            const n = Number(value);
+            return n < 1e12 ? n * 1000 : n;
+          }
+          const text = str(value).trim();
+          return (
+            Date.parse(
+              /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(text)
+                ? text.replace(" ", "T") + "Z"
+                : text,
+            ) || 0
+          );
+        };
+        // Last-resort title: the user's first message from the canonical
+        // transcript head. WisCode bodies are Claude/Codex jsonl, so the same
+        // bounded head read as the engine scanners applies.
+        const wisFallbackTitle = async (file: string) => {
+          try {
+            const records = headRecords(await head(file));
+            for (const r of records) {
+              // Codex dialect: event_msg/user_message
+              if (r.type === "event_msg" && r.payload?.type === "user_message") {
+                const ask = readableTitle(str(r.payload.message));
+                if (ask) return ask;
+              }
+              // Claude dialect: user record with text content
+              if (r.type === "user" && object(r.message)) {
+                const content = r.message.content;
+                const text = Array.isArray(content)
+                  ? content
+                      .filter(
+                        (p: unknown) =>
+                          object(p) && str(p.type) === "text",
+                      )
+                      .map((p: unknown) => str((p as { text?: unknown }).text))
+                      .join("\n")
+                  : str(content);
+                const ask = readableTitle(text);
+                if (ask) return ask;
+              }
+            }
+          } catch {}
+          return "";
+        };
         if (await exists(native))
           await attempt("WisCode 原生项目和会话登记", async () =>
-            sourceDatabase(native, (db) => {
+            sourceDatabase(native, async (db) => {
               const ts = tables(db);
               if (ts.has("projects")) {
                 nativeProjects = true;
                 for (const r of db
-                  .prepare(
-                    "SELECT project_id,project_path,custom_project_name,location_kind,remote_host_id FROM projects",
-                  )
+                  .prepare("SELECT * FROM projects")
                   .iterate()) {
                   const dir = str(r.project_path),
                     pid = project(
@@ -676,13 +903,30 @@ export class HistorySources {
                       str(r.custom_project_name) || path.basename(dir),
                       dir ? [dir] : [],
                     );
-                  projectIds.set(dir, pid);
+                  projectIds.set(normalize(dir), pid);
+                  nativeRows.set(pid, r);
+                  if (r.isArchived || r.workspace_kind === "auto_session")
+                    supplementalProjects.add(pid);
+                  projectActivity.set(
+                    pid,
+                    Math.max(wisTime(r.created_at), wisTime(r.updated_at)),
+                  );
                   if (r.remote_host_id)
                     gaps.push(
                       "WisCode 存在远端项目，其正文需连接对应主机后核验。",
                     );
                 }
               }
+              if (ts.has("project_worktrees"))
+                for (const r of db
+                  .prepare(
+                    "SELECT source_project_path,worktree_path FROM project_worktrees",
+                  )
+                  .iterate()) {
+                  const source = normalize(str(r.source_project_path)),
+                    worktree = normalize(str(r.worktree_path));
+                  if (source && worktree) worktrees.set(worktree, source);
+                }
               const bindings = new Map<string, Record<string, any>>();
               if (ts.has("session_runtime_bindings"))
                 for (const r of db
@@ -691,7 +935,10 @@ export class HistorySources {
                   )
                   .iterate())
                   bindings.set(String(r.session_id), r);
-              if (ts.has("sessions"))
+              if (ts.has("sessions")) {
+                // Sessions whose title chain fell through to the placeholder;
+                // their canonical transcript head is read after the DB read.
+                const untitled: { task: HistoryRecord; file: string }[] = [];
                 for (const r of db
                   .prepare(
                     "SELECT session_id,provider,provider_thread_id,custom_name,project_path,jsonl_path,isArchived,updated_at,created_at FROM sessions",
@@ -714,7 +961,7 @@ export class HistorySources {
                           t.locator.files?.some(
                             (f) => f.path === canonical,
                           ))) &&
-                      t.instance.startsWith("WisCode:"),
+                      engineInstances.has(t.instance),
                   );
                   const primary =
                     matches.find(
@@ -767,33 +1014,115 @@ export class HistorySources {
                   add(
                     inst,
                     String(r.session_id),
-                    str(r.custom_name) || primary?.title || "无标题对话",
+                    // A host placeholder ("Untitled Codex Session") is not a
+                    // name; fall through to the engine-derived title.
+                    readableTitle(str(r.custom_name)) ||
+                      primary?.title ||
+                      "无标题对话",
                     str(r.project_path) || primary?.directory || "",
-                    time(r.updated_at) ||
+                    wisTime(r.updated_at) ||
                       primary?.updated ||
-                      time(r.created_at),
+                      wisTime(r.created_at),
                     locator,
                     {
                       kind: r.isArchived
                         ? "archived"
                         : primary?.kind || "conversation",
                       available: !!primary || !!canonical,
-                      projectId: projectIds.get(str(r.project_path)),
+                      projectId: resolveProject(str(r.project_path)),
                     },
                   );
+                  const added = tasks.get(id);
+                  if (
+                    added &&
+                    added.title === "无标题对话" &&
+                    canonical
+                  )
+                    untitled.push({ task: added, file: canonical });
                 }
+                // The registration row had no usable name and no engine title;
+                // read the user's first message from the transcript head so the
+                // list stops showing "无标题对话" for real conversations.
+                for (const { task, file } of untitled) {
+                  const ask = await wisFallbackTitle(file);
+                  if (ask) task.title = clean.clean(ask);
+                }
+              }
               for (const t of tasks.values())
-                if (t.instance.startsWith("WisCode:")) {
+                if (engineInstances.has(t.instance)) {
                   if (
                     !t.instance.endsWith(":native") &&
                     t.kind === "conversation"
                   )
                     t.kind = "orphan";
-                  if (projectIds.has(t.directory))
-                    t.projectId = projectIds.get(t.directory);
+                  const pid = resolveProject(t.directory);
+                  if (pid) t.projectId = pid;
                   if (t.parentId && remapped.has(t.parentId))
                     t.parentId = remapped.get(t.parentId);
                 }
+              // Parent identities remain authoritative even when a child runs in a detached worktree.
+              const inherit = (
+                task: HistoryRecord,
+                seen = new Set<string>(),
+              ): string | undefined => {
+                if (seen.has(task.id)) return task.projectId;
+                seen.add(task.id);
+                const parent = task.parentId && tasks.get(task.parentId);
+                if (parent && task.kind === "subagent")
+                  task.projectId = inherit(parent, seen) || task.projectId;
+                return task.projectId;
+              };
+              for (const t of tasks.values())
+                if (engineInstances.has(t.instance)) {
+                  const pid = inherit(t);
+                  if (pid && t.kind !== "subagent")
+                    projectActivity.set(
+                      pid,
+                      Math.max(projectActivity.get(pid) || 0, t.updated),
+                    );
+                }
+              // Drop engine catalogs replaced by the authoritative WisCode registration, not their history.
+              const used = new Set([...tasks.values()].map((t) => t.projectId));
+              for (const [id, p] of projects)
+                if (
+                  p.instance !== inst &&
+                  engineInstances.has(p.instance || "") &&
+                  !used.has(id)
+                )
+                  projects.delete(id);
+              const manual = new Map<string, number>(
+                Array.isArray(uiOrder.projectManualOrder)
+                  ? uiOrder.projectManualOrder.map(
+                      (id: string, index: number) => [id, index],
+                    )
+                  : [],
+              );
+              const rows = [...nativeRows].sort(([a, ar], [b, br]) => {
+                if (uiOrder.sortOrder === "manual") {
+                  const delta =
+                    (manual.get(String(ar.project_id)) ?? Infinity) -
+                    (manual.get(String(br.project_id)) ?? Infinity);
+                  if (delta && !Number.isNaN(delta)) return delta;
+                }
+                if (uiOrder.sortOrder === "priority") {
+                  const delta = Number(!!br.isStarred) - Number(!!ar.isStarred);
+                  if (delta) return delta;
+                }
+                const delta =
+                  uiOrder.sortOrder === "createdAt"
+                    ? wisTime(br.created_at) - wisTime(ar.created_at)
+                    : (projectActivity.get(b) || 0) -
+                      (projectActivity.get(a) || 0);
+                return (
+                  delta ||
+                  String(ar.project_id).localeCompare(
+                    String(br.project_id),
+                    undefined,
+                    { numeric: true },
+                  )
+                );
+              });
+              rows.forEach(([id], index) => projectOrders.set(id, index));
             }),
           );
       }
@@ -822,9 +1151,12 @@ export class HistorySources {
                 for (const r of db
                   .prepare("SELECT * FROM workspaces")
                   .iterate())
-                  project(inst, str(r.path), path.basename(str(r.path)), [
-                    str(r.path),
-                  ]);
+                  projectActivity.set(
+                    project(inst, str(r.path), path.basename(str(r.path)), [
+                      str(r.path),
+                    ]),
+                    time(r.last_opened_at),
+                  );
               }
               if (!ts.has("sessions"))
                 throw new Error("WorkBuddy 会话表尚未适配。");
@@ -995,9 +1327,19 @@ export class HistorySources {
             const d = await json(registry);
             if (object(d.tables?.workspaces)) {
               nativeProjects = true;
+              const order = new Map<string, number>(
+                Array.isArray(d.global?.workspaceIds)
+                  ? d.global.workspaceIds.map((id: string, index: number) => [
+                      id,
+                      index,
+                    ])
+                  : [],
+              );
               for (const [id, r] of Object.entries(d.tables.workspaces))
                 if (object(r)) {
                   const pid = project(inst, id, str(r.title), [str(r.path)]);
+                  if (order.has(id)) projectOrders.set(pid, order.get(id)!);
+                  projectActivity.set(pid, time(r.updatedAt || r.createdAt));
                   for (const s of r.sessionIds || [])
                     if (typeof s === "string") nativeIds.set(s, pid);
                 }
@@ -1081,7 +1423,8 @@ export class HistorySources {
             const id = path.basename(f, ".jsonl");
             externalLogs.set(id, [...(externalLogs.get(id) || []), f]);
           }
-      for (const userRoot of bases(source, [user]))
+      for (const userRoot of bases(source, [user])) {
+        const order = await recentWorkspaces(userRoot);
         for (const ws of await entries(
           path.join(userRoot, "workspaceStorage"),
         )) {
@@ -1099,12 +1442,13 @@ export class HistorySources {
             } catch {
               gaps.push("VS Code 工作区 URI 无法解析。");
             }
-            project(
+            const pid = project(
               inst,
               ws.name,
               path.basename(dir) || ws.name,
               dir ? [dir] : [],
             );
+            if (order.has(dir)) projectOrders.set(pid, order.get(dir)!);
             nativeProjects = true;
             const idx = new Map<string, Record<string, any>>(),
               dbfile = path.join(root, "state.vscdb");
@@ -1169,6 +1513,7 @@ export class HistorySources {
             if (idx.size || refs.size) stores++;
           });
         }
+      }
     } else if (source === "Cursor")
       for (const user of bases(source, [
         path.join(this.home, "Library/Application Support/Cursor/User"),
@@ -1183,6 +1528,7 @@ export class HistorySources {
             >();
           if (!(await exists(dbfile))) return;
           stores++;
+          const order = await recentWorkspaces(user);
           for (const ws of await entries(path.join(user, "workspaceStorage"))) {
             if (!ws.isDirectory()) continue;
             await attempt("Cursor 工作区", async () => {
@@ -1203,6 +1549,7 @@ export class HistorySources {
                 path.basename(dir) || ws.name,
                 dir ? [dir] : [],
               );
+              if (order.has(dir)) projectOrders.set(projectId, order.get(dir)!);
               nativeProjects = true;
               const state = path.join(folder, "state.vscdb");
               if (!(await exists(state))) return;
@@ -1368,10 +1715,36 @@ export class HistorySources {
     }
     for (const [id, p] of projects)
       if (!p.registered && !p.count) projects.delete(id);
+    const activity = new Map(projectActivity);
+    for (const t of tasks.values())
+      if (
+        t.projectId &&
+        t.kind !== "subagent" &&
+        !projectActivity.has(t.projectId)
+      )
+        activity.set(
+          t.projectId,
+          Math.max(activity.get(t.projectId) || 0, t.updated),
+        );
+    const orderedProjects = [...projects.values()].sort((a, b) => {
+      const group = (p: SourceProject) =>
+        !p.registered ? 2 : supplementalProjects.has(p.id) ? 1 : 0;
+      return (
+        group(a) - group(b) ||
+        (projectOrders.get(a.id) ?? Infinity) -
+          (projectOrders.get(b.id) ?? Infinity) ||
+        0 ||
+        (activity.get(b.id) || 0) - (activity.get(a.id) || 0) ||
+        a.id.localeCompare(b.id)
+      );
+    });
+    orderedProjects.forEach((p, index) => {
+      p.order = index;
+    });
     const uniqueGaps = [...new Set(gaps)];
     return {
       tasks: [...tasks.values()],
-      projects: [...projects.values()],
+      projects: orderedProjects,
       coverage: {
         indexedAt: Date.now(),
         projects: nativeProjects && !uniqueGaps.length ? "complete" : "partial",

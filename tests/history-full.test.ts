@@ -45,6 +45,127 @@ const task = (file: string, root: string): HistoryRecord => ({
   locator: { files: [{ path: file, root }] },
 });
 
+test("Codex title skips instruction-only messages before the actual user request", async () =>
+  fixture(async (home) => {
+    const file = path.join(
+      home,
+      ".codex/sessions/2026/11/12/rollout-12345678-1234-4234-8234-123456789abc.jsonl",
+    );
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(
+      file,
+      [
+        {
+          type: "session_meta",
+          payload: {
+            id: "12345678-1234-4234-8234-123456789abc",
+            cwd: "/fixture",
+          },
+        },
+        {
+          type: "event_msg",
+          payload: {
+            type: "user_message",
+            message:
+              "# AGENTS.md instructions\n<INSTRUCTIONS>\nProject rules\n</INSTRUCTIONS>",
+          },
+        },
+        {
+          type: "event_msg",
+          payload: { type: "user_message", message: "继续分段计数任务" },
+        },
+      ]
+        .map((r) => JSON.stringify(r))
+        .join("\n") + "\n",
+    );
+    const scan = await new HistorySources(home).scan("Codex");
+    assert.equal(scan.tasks[0].title, "继续分段计数任务");
+  }));
+
+for (const primaryKey of [false, true]) {
+  test(`ZCode artifact data URI survives native archive and packaging (${primaryKey ? "with" : "without"} primary keys)`, async () =>
+    fixture(async (home) => {
+      const file = path.join(home, ".zcode/cli/db/db.sqlite");
+      const pk = primaryKey ? " PRIMARY KEY" : "";
+      await sqlite(file, (db) => {
+        db.exec(`CREATE TABLE session(id TEXT${pk}, title TEXT, directory TEXT, time_updated INTEGER, parent_id TEXT);
+          CREATE TABLE message(id TEXT${pk},session_id TEXT,time_created INTEGER,data TEXT);
+          CREATE TABLE part(id TEXT${pk},message_id TEXT,session_id TEXT,time_created INTEGER,data TEXT)`);
+        db.prepare("INSERT INTO session VALUES(?,?,?,?,?)").run(
+          "sess_fixture",
+          "Image relay",
+          "/fixture",
+          2,
+          null,
+        );
+        db.prepare("INSERT INTO message VALUES(?,?,?,?)").run(
+          "u1",
+          "sess_fixture",
+          1,
+          JSON.stringify({ role: "user" }),
+        );
+        db.prepare("INSERT INTO part VALUES(?,?,?,?,?)").run(
+          "p1",
+          "u1",
+          "sess_fixture",
+          1,
+          JSON.stringify({
+            type: "file",
+            mime: "image/jpeg",
+            filename: "original.jpg",
+            url: "zcode-artifact://sess_fixture/tool-result-image",
+          }),
+        );
+      });
+      const png = Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=",
+        "base64",
+      );
+      const cache = path.join(
+        home,
+        ".zcode/cli/artifacts/session_producer/cache-tool-result-image.txt",
+      );
+      await fs.mkdir(path.dirname(cache), { recursive: true });
+      await fs.writeFile(
+        cache,
+        "data:image/png;base64," + png.toString("base64"),
+      );
+      const service = new HistoryService(path.join(home, "owned"), home);
+      try {
+        const page = await service.browse("ZCode");
+        const imported = await service.importSession(page.tasks[0].id, "ZCode");
+        const folder = path.join(service.archives.root, imported.context!.id);
+        const manifest = JSON.parse(
+          await fs.readFile(path.join(folder, "manifest.json"), "utf8"),
+        );
+        assert.equal(manifest.attachments.length, 1);
+        const image = manifest.attachments[0];
+        assert.equal(image.status, "present");
+        assert.equal(image.mime, "image/png");
+        assert.equal(
+          image.sha256,
+          createHash("sha256").update(png).digest("hex"),
+        );
+        assert.deepEqual(await fs.readFile(path.join(folder, image.path)), png);
+        if (!primaryKey) {
+          const records = (
+            await fs.readFile(path.join(folder, "context.jsonl"), "utf8")
+          )
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line));
+          assert.equal(
+            typeof records.find((r) => r.source === "part").record.data,
+            "string",
+            "native row serialization stays intact",
+          );
+        }
+      } finally {
+        service.close();
+      }
+    }));
+}
+
 test("ZCode enumerates both ID formats, empty registered projects, drafts and subagents", async () =>
   fixture(async (home) => {
     await sqlite(path.join(home, ".zcode/cli/db/db.sqlite"), (db) => {
@@ -590,9 +711,13 @@ test("MCP image content preserves direct Base64 data and mimeType", async () =>
   }));
 
 test("filtering uses the current index; explicit unchanged refresh preserves verification and changed data invalidates it", async () =>
-  fixture(async home => {
+  fixture(async (home) => {
     const file = path.join(home, ".local/share/opencode/opencode.db");
-    await sqlite(file, db => db.exec("CREATE TABLE project(id TEXT,name TEXT,worktree TEXT);CREATE TABLE session(id TEXT,title TEXT,directory TEXT,project_id TEXT,time_updated INTEGER,parent_id TEXT);CREATE TABLE session_message(id TEXT PRIMARY KEY,session_id TEXT,type TEXT,seq INTEGER,data TEXT);INSERT INTO project VALUES('p','Project','/p');INSERT INTO session VALUES('s','Original','/p','p',1,NULL);INSERT INTO session_message VALUES('u','s','user',1,'{\"text\":\"original body\"}')"));
+    await sqlite(file, (db) =>
+      db.exec(
+        "CREATE TABLE project(id TEXT,name TEXT,worktree TEXT);CREATE TABLE session(id TEXT,title TEXT,directory TEXT,project_id TEXT,time_updated INTEGER,parent_id TEXT);CREATE TABLE session_message(id TEXT PRIMARY KEY,session_id TEXT,type TEXT,seq INTEGER,data TEXT);INSERT INTO project VALUES('p','Project','/p');INSERT INTO session VALUES('s','Original','/p','p',1,NULL);INSERT INTO session_message VALUES('u','s','user',1,'{\"text\":\"original body\"}')",
+      ),
+    );
     const service = new HistoryService(path.join(home, "owned"), home);
     try {
       const first = await service.browse("OpenCode");
@@ -601,31 +726,58 @@ test("filtering uses the current index; explicit unchanged refresh preserves ver
       assert(verified.coverage?.verifiedAt);
       const filtered = await service.browse("OpenCode", { search: "Original" });
       assert.equal(filtered.coverage?.context, "complete");
-      assert.equal(filtered.coverage?.verifiedAt, verified.coverage?.verifiedAt);
+      assert.equal(
+        filtered.coverage?.verifiedAt,
+        verified.coverage?.verifiedAt,
+      );
       const unchanged = await service.browse("OpenCode", { refresh: true });
       assert.equal(unchanged.coverage?.context, "complete");
-      await sqlite(file, db => db.exec("UPDATE session SET title='Changed',time_updated=2 WHERE id='s'"));
-      assert.equal((await service.browse("OpenCode", { search: "Changed" })).total, 0);
-      const changed = await service.browse("OpenCode", { refresh: true, search: "Changed" });
+      await sqlite(file, (db) =>
+        db.exec(
+          "UPDATE session SET title='Changed',time_updated=2 WHERE id='s'",
+        ),
+      );
+      assert.equal(
+        (await service.browse("OpenCode", { search: "Changed" })).total,
+        0,
+      );
+      const changed = await service.browse("OpenCode", {
+        refresh: true,
+        search: "Changed",
+      });
       assert.equal(changed.total, 1);
       assert.notEqual(changed.revision, first.revision);
       assert.equal(changed.coverage?.context, "not-checked");
       assert.equal(changed.coverage?.verifiedAt, undefined);
-    } finally { service.close(); }
+    } finally {
+      service.close();
+    }
   }));
 
 test("cancelling a verification returns partial progress without reporting a source read failure or complete coverage", async () =>
-  fixture(async home => {
-    await sqlite(path.join(home, ".zcode/cli/db/db.sqlite"), db => db.exec("CREATE TABLE session(id TEXT,title TEXT,directory TEXT,time_updated INTEGER,parent_id TEXT);INSERT INTO session VALUES('s','Session','/p',1,NULL)"));
+  fixture(async (home) => {
+    await sqlite(path.join(home, ".zcode/cli/db/db.sqlite"), (db) =>
+      db.exec(
+        "CREATE TABLE session(id TEXT,title TEXT,directory TEXT,time_updated INTEGER,parent_id TEXT);INSERT INTO session VALUES('s','Session','/p',1,NULL)",
+      ),
+    );
     const service = new HistoryService(path.join(home, "owned"), home);
     try {
       const archive = service.archives.archive.bind(service.archives);
-      service.archives.archive = async (task, signal) => { service.cancelVerification(); return archive(task, signal); };
+      service.archives.archive = async (task, signal) => {
+        service.cancelVerification();
+        return archive(task, signal);
+      };
       const result = await service.verify("ZCode");
       assert.equal(result.cancelled, true);
       assert.equal(result.complete, false);
       assert.equal(result.failures.length, 0);
       assert.equal(service.getVerification()?.cancelled, true);
-      assert.equal((await service.browse("ZCode")).coverage?.context, "not-checked");
-    } finally { service.close(); }
+      assert.equal(
+        (await service.browse("ZCode")).coverage?.context,
+        "not-checked",
+      );
+    } finally {
+      service.close();
+    }
   }));

@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { newTriage, TRIAGE_TARGETS } from "../../src/shared/triage";
+import {
+  newTriage,
+  TRIAGE_TARGETS,
+  TRIAGE_STATUS_PAGES,
+  TRIAGE_GUIDANCE,
+} from "../../src/shared/triage";
+import { guidanceFor } from "../../src/shared/adapters";
 import type {
   AIPlatform,
   Flow,
@@ -16,7 +22,10 @@ export interface TriageDependencies {
   network(): Promise<{ count: number; signature: string }>;
   proxy(url: string): Promise<string>;
   proxyEndpoint(proxy: string, signal: AbortSignal): Promise<string[]>;
-  dns(host: string, signal: AbortSignal): Promise<{ v4: number; v6: number }>;
+  dns(
+    host: string,
+    signal: AbortSignal,
+  ): Promise<{ v4: number; v6: number; sinkholed?: boolean }>;
   probe(target: AIPlatform, signal: AbortSignal): Promise<PlatformResult>;
   ipPath?(host: string, signal: AbortSignal): Promise<IPPathReport>;
   processes(): Promise<ProcessInfo[]>;
@@ -91,6 +100,18 @@ export class TriageDoctor {
       status: "running",
       started: now,
     };
+    // Reviewed official guidance rides along with the run; it is displayed as
+    // draft facts and never treated as proof about the installed version.
+    const guidanceProduct = guidanceFor(TRIAGE_GUIDANCE[targetId] || "");
+    if (guidanceProduct)
+      this.run.guidance = {
+        productId: guidanceProduct.productId,
+        facts: [...guidanceProduct.facts],
+        manualSteps: [...guidanceProduct.manualSteps],
+        sourceLabel: guidanceProduct.source.label,
+        sourceUrl: guidanceProduct.source.url,
+        reviewedAt: guidanceProduct.reviewedAt,
+      };
     const abort = new AbortController();
     this.abort = abort;
     this.emit();
@@ -159,6 +180,7 @@ export class TriageDoctor {
   ) {
     let noNetwork = false;
     let systemProxyDirect = false;
+    const guidanceProfile = guidanceFor(TRIAGE_GUIDANCE[target.id] || "");
     await this.step("network", signal, async () => {
       const network = await this.d.network();
       noNetwork = network.count === 0;
@@ -213,19 +235,32 @@ export class TriageDoctor {
             support: "none",
           };
         const proxy = `${match[1].toUpperCase() === "PROXY" ? "http" : "socks5"}://${match[2]}`;
+        const socksUnsupported =
+          match[1].toUpperCase() === "SOCKS5" &&
+          guidanceProfile?.proxySupport?.socks === false;
         try {
           const details = await this.d.proxyEndpoint(proxy, signal);
           return {
-            status: "pass",
-            summary: "系统选中的代理端点接受了 TCP 连接",
+            status: socksUnsupported ? "unverified" : "pass",
+            summary: socksUnsupported
+              ? "系统选中的 SOCKS5 端点可连接，但该产品 CLI 官方说明不支持 SOCKS"
+              : "系统选中的代理端点接受了 TCP 连接",
             evidence: [
               "未发送账号凭据；端点连通不代表隧道认证或目标路由正常。",
               ...details,
+              ...(socksUnsupported
+                ? [
+                    "官方文档说明该产品 CLI 不支持 SOCKS 代理；系统 SOCKS5 路径对 CLI 可能无效。需改用 HTTP 代理或在工具自身配置中单独设置；此说明不外推到其他产品。",
+                  ]
+                : []),
             ],
-            suggestion:
-              "如果仍失败，继续查看平台响应；本机监听不等于 VPN 配置正确。",
-            actions: [],
-            support: "observed",
+            suggestion: socksUnsupported
+              ? "为该 CLI 改配 HTTP 代理（按官方文档的作用域设置），新开会话复测；本检查不代改配置。"
+              : "如果仍失败，继续查看平台响应；本机监听不等于 VPN 配置正确。",
+            actions: socksUnsupported
+              ? ["proxy_settings", "retry", "copy_report"]
+              : [],
+            support: socksUnsupported ? "limited" : "observed",
           };
         } catch {
           return {
@@ -244,6 +279,18 @@ export class TriageDoctor {
       await this.step("dns", signal, async () => {
         try {
           const answer = await this.d.dns(new URL(target.url).hostname, signal);
+          if (answer.sinkholed)
+            return {
+              status: "attention",
+              summary: "解析结果被指向回环或全零地址，不是平台真实地址",
+              evidence: [
+                "解析器对入口返回了 0.0.0.0 / 127.x 一类地址：通常来自本机 hosts 屏蔽、安全软件拦截或解析器污染，属于域名被劫持的特征，不是网络不通。",
+              ],
+              suggestion:
+                "检查本机 hosts 文件与安全软件的域名拦截设置；本工具不自动修改。处理后复测。",
+              actions: ["network_settings", "retry", "copy_report"],
+              support: "observed",
+            };
           return {
             status: "pass",
             summary: "系统解析器返回了入口地址",
@@ -254,12 +301,23 @@ export class TriageDoctor {
             actions: [],
             support: "observed",
           };
-        } catch {
+        } catch (e) {
+          const code = (e as { code?: string }).code || "";
+          const notFound = ["ENOTFOUND", "ENODATA", "NOTFOUND"].includes(code);
+          const again = code === "EAI_AGAIN";
           return {
             status: "attention",
-            summary: "本机系统解析器未返回可用入口地址",
+            summary: notFound
+              ? "解析器明确表示该域名不存在（NXDOMAIN）"
+              : again
+                ? "解析器暂时没有应答"
+                : "本机系统解析器未返回可用入口地址",
             evidence: [
-              "本次系统 DNS 检查失败；代理远端解析可能仍然正常，应独立看入口结果。",
+              notFound
+                ? "解析返回无记录：更可能是域名拼写、hosts 或解析配置问题，不是网络不通。"
+                : again
+                  ? "解析器超时未应答：常见于本地 DNS 服务不可达或被防火墙拦截。"
+                  : "本次系统 DNS 检查失败；代理远端解析可能仍然正常，应独立看入口结果。",
             ],
             suggestion:
               "先重新连接获批网络或联系 IT 检查 DNS；处理后复测，不自动替换公司 DNS。",
@@ -270,8 +328,11 @@ export class TriageDoctor {
       });
       await this.step("entry", signal, async () => {
         const result = await this.d.probe(target, signal);
+        // Path-diagnosis host comes from platform data only; no hardcoded,
+        // unverified backend domains.
+        const pathHost = target.networkHost || new URL(target.url).hostname;
         if (this.d.ipPath && !signal.aborted) {
-          const report = await this.d.ipPath(target.id === "codex" ? "codex-cloud-backend.chatgpt.com" : new URL(target.url).hostname, signal);
+          const report = await this.d.ipPath(pathHost, signal);
           if (signal.aborted) return {};
           if (!systemProxyDirect) report.repair = undefined;
           this.run.ipPath = report;
@@ -291,6 +352,21 @@ export class TriageDoctor {
             e.status === "failed" &&
             /CERT|SSL|SELF_SIGNED|ISSUER|VERIFY/i.test(e.code || ""),
         );
+        // The two stacks trust different roots: Chromium uses the OS store,
+        // the Node fallback uses bundled roots. A pass/fail split between them
+        // is the signature of an enterprise root installed only system-wide.
+        const systemHttpOk = result.evidence.some(
+          (e) =>
+            e.source === "Chromium · system network" && e.status === "success",
+        );
+        const trustDivergence =
+          systemHttpOk &&
+          result.evidence.some(
+            (e) =>
+              e.route !== "system" &&
+              e.status === "failed" &&
+              /CERT|SSL|SELF_SIGNED|ISSUER|VERIFY/i.test(e.code || ""),
+          );
         const healthy =
           ["reachable", "auth_required"].includes(result.status) &&
           !systemFailed;
@@ -301,10 +377,7 @@ export class TriageDoctor {
             : result.status === "check_failed"
               ? ["reset_probe", "retry"]
               : ["open_platform", "retry", "copy_report"];
-        if (
-          result.status === "busy" &&
-          ["codex", "chatgpt"].includes(target.id)
-        )
+        if (result.status === "busy" && TRIAGE_STATUS_PAGES[target.id])
           actions.unshift("service_status");
         return {
           status:
@@ -317,8 +390,12 @@ export class TriageDoctor {
           evidence: [...result.evidence.map(
             (e) =>
               `${e.source === "Chromium · system network" ? "系统路径" : e.route === "direct" ? "补充直连" : "补充代理"} · ${e.stage.toUpperCase()}：${e.status}${e.httpStatus ? ` HTTP ${e.httpStatus}` : ""}${e.code ? ` ${e.code}` : ""}`,
-          ), ...(ipPath ? ipPathEvidence(ipPath) : [])],
-          suggestion: `${result.suggestion}${target.id === "codex" ? " 公开入口与补充 Codex 服务探测不证明模型、认证或任务连接正常。" : ""}${ipPath ? ` ${ipPathSummary(ipPath)}` : ""}`,
+          ), ...(ipPath ? ipPathEvidence(ipPath) : []), ...(trustDivergence
+            ? [
+                "证书信任分歧：系统路径（OS 信任库）已收到响应，而补充路径（Node 内置根证书）校验失败。常见于企业根证书只安装进系统信任库；这不代表平台故障，也不证明目标工具一定失败。",
+              ]
+            : [])],
+          suggestion: `${result.suggestion}${target.id === "codex" ? " 公开入口与补充 Codex 服务探测不证明模型、认证或任务连接正常。" : ""}${ipPath ? ` ${ipPathSummary(ipPath)}` : ""}${trustDivergence ? " 若目标 CLI 报证书校验失败而系统路径正常，请由 IT 确认企业根证书的分发范围；不要关闭证书校验。" : ""}`,
           actions: [...actions, ...(ipPath?.repair ? ["copy_ipv6_plan" as const] : []), ...(this.run.ipv6Recovery ? ["copy_ipv6_restore" as const] : [])],
           support: result.status === "check_failed" ? "none" : "limited",
         };

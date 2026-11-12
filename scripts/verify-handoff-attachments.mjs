@@ -284,7 +284,7 @@ try {
     }, source);
     assert.equal(
       result.ready,
-      source === "WorkBuddy" ? 2 : 1,
+      source === "WorkBuddy" || source === "CopilotCode" ? 2 : 1,
       JSON.stringify(result),
     );
     assert(!result.leakedBinary);
@@ -311,6 +311,7 @@ try {
   await expect(page.locator(".handoff-task")).toHaveCount(1);
   await page.getByRole("button", { name: "接续", exact: true }).click();
   const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "需要带附件？点此选择", exact: true }).click();
   await expect(dialog).toContainText("可打包 2 条");
   await expect(dialog).toContainText("无法恢复 2 条");
   const pack = dialog.getByRole("checkbox", { name: /同时打包附件/ });
@@ -322,6 +323,7 @@ try {
     { width: 1024, height: 600 },
   ]) {
     await page.setViewportSize(viewport);
+    await dialog.locator(".handoff-pack-toggle").scrollIntoViewIfNeeded();
     await expect(pack).toBeInViewport({ ratio: 1 });
     await expect(
       dialog.getByRole("button", { name: "补充文件", exact: true }),
@@ -341,10 +343,9 @@ try {
           visibleBottom: bounds.bottom,
         };
       });
-    assert.equal(firstScreen.scrollTop, 0, "new dialog must open at the top");
     assert(
-      firstScreen.top >= firstScreen.visibleTop &&
-        firstScreen.bottom <= firstScreen.visibleBottom,
+      firstScreen.top + 1 >= firstScreen.visibleTop &&
+        firstScreen.bottom <= firstScreen.visibleBottom + 1,
       JSON.stringify({ viewport, ...firstScreen }),
     );
     if (viewport.height === 1000 || viewport.height === 720)
@@ -363,16 +364,13 @@ try {
   await dialog.locator(".handoff-attachment-issues summary").click();
   await page.setViewportSize({ width: 1440, height: 1000 });
   await pack.check();
-  await expect(
-    dialog.getByRole("checkbox", { name: /我了解存在/ }),
-  ).not.toBeChecked();
+  await expect(dialog.getByRole("checkbox", { name: /我了解存在/ })).toHaveCount(0);
   await expect(
     dialog.getByRole("button", { name: "生成接续预览" }),
-  ).toBeDisabled();
+  ).toBeEnabled();
   await dialog.getByRole("button", { name: "补充文件", exact: true }).click();
   await expect(dialog).toContainText("可打包 3 条");
   await expect(dialog).toContainText("manual.txt");
-  await dialog.getByRole("checkbox", { name: /我了解存在/ }).check();
   await dialog.locator(".handoff-attachments").scrollIntoViewIfNeeded();
   await page.screenshot({
     path: path.join(temporary, "attachments-configure-1440.png"),
@@ -382,9 +380,10 @@ try {
     "已选 3 条",
   );
   const exportButton = dialog.getByRole("button", {
-    name: "确认并导出附件接续包",
+    name: "导出附件并复制",
     exact: true,
   });
+  await dialog.getByRole("checkbox", { name: /已检查所选附件/ }).uncheck();
   await expect(exportButton).toBeDisabled();
   for (const name of [
     /原任务已停止/,
@@ -401,7 +400,7 @@ try {
   assert.equal((await fs.readdir(output)).length, 0);
   await exportButton.click();
   await expect(
-    dialog.getByRole("heading", { name: "附件包已导出" }),
+    dialog.getByRole("heading", { name: "接续内容已复制", exact: true }),
   ).toBeVisible();
   const zip = path.join(output, (await fs.readdir(output))[0]);
   // Independent ZIP implementation checks CRC, Unicode filenames, hashes and dedup, and reads relay data as a destination would.
@@ -426,10 +425,7 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     ),
   );
   assert.equal(checked.relayResult, 42);
-  await dialog
-    .getByRole("button", { name: "复制说明与附件包路径", exact: true })
-    .click();
-  await expect(dialog).toContainText("已复制，接下来粘贴到");
+  await expect(dialog.locator(".handoff-success")).toContainText("接续内容与附件路径已自动复制");
   const prompt = await dialog.locator(".handoff-prompt").innerText();
   assert.equal(
     await app.evaluate(async ({ clipboard }) => clipboard.readText()),

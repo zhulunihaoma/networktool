@@ -361,8 +361,13 @@ test("重新扫描不复用被替换文件授权，keyset 审计分页没有重�
       "deny",
     );
     const rescanned = await files.rescan(scope.id);
-    assert.notEqual(rescanned.scopes[0].candidates[0].id, resourceId);
-    assert.equal(rescanned.scopes[0].policies.length, 0);
+    assert.equal(rescanned.scopes[0].candidates[0].id, resourceId);
+    assert.equal(rescanned.scopes[0].candidates[0].review, "stale");
+    assert.equal(rescanned.scopes[0].policies.length, 1);
+    assert.equal(
+      (await files.evaluate(scope.id, resourceId, "read")).decision,
+      "deny",
+    );
     assert.ok(rescanned.scopes[0].warnings.some((w) => w.includes("重新确认")));
   } finally {
     await fs.rm(directory, { recursive: true, force: true });

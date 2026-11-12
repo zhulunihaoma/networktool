@@ -68,8 +68,11 @@ export default function TaskHandoff({
   onError: (text: string) => void;
 }) {
   const [detected, setDetected] = useState<HandoffTool[]>([]);
-  const [detectBusy, setDetectBusy] = useState(false);
+  const [detectBusy, setDetectBusy] = useState(true);
   const [detectError, setDetectError] = useState("");
+  const [toolTotals, setToolTotals] = useState<
+    Partial<Record<HandoffSource, number>>
+  >({});
   const detectionRequest = useRef<Promise<HandoffTool[]> | undefined>(
     undefined,
   );
@@ -89,6 +92,7 @@ export default function TaskHandoff({
   ];
   const discover = async () => {
     if (!api.discoverHandoffTools) {
+      setDetectBusy(false);
       setDetectError("请重启应用以加载本机工具识别接口。");
       return;
     }
@@ -98,7 +102,16 @@ export default function TaskHandoff({
       detectionRequest.current ||
       (detectionRequest.current = api.discoverHandoffTools());
     try {
-      setDetected(await request);
+      const result = await request;
+      setDetected(result);
+      setToolTotals((current) => ({
+        ...current,
+        ...Object.fromEntries(
+          result
+            .filter((tool) => tool.sessionCount !== undefined)
+            .map((tool) => [tool.id, tool.sessionCount]),
+        ),
+      }));
     } catch (error) {
       setDetectError(errorText(error));
     } finally {
@@ -145,7 +158,8 @@ export default function TaskHandoff({
     };
   }, [api, verifying, activeTool]);
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [listBusy, setListBusy] = useState(false);
+  const [listBusy, setListBusy] = useState(true);
+  const [loadingSlow, setLoadingSlow] = useState(false);
   const [source, setSource] = useState<HandoffImport>();
   const [goal, setGoal] = useState(
     "继续未完成任务；先核对当前文件和已完成操作，不重复未知结果的副作用。",
@@ -159,14 +173,13 @@ export default function TaskHandoff({
   const [view, setView] = useState<DialogView | null>(null);
   const [busy, setBusy] = useState(false);
   const [dialogError, setDialogError] = useState("");
-  const [stopped, setStopped] = useState(false);
-  const [workspace, setWorkspace] = useState(false);
-  const [reviewed, setReviewed] = useState(false);
-  const [attachmentValid, setAttachmentValid] = useState(true);
-  const [attachmentsReviewed, setAttachmentsReviewed] = useState(false);
+  const [stopped, setStopped] = useState(true);
+  const [workspace, setWorkspace] = useState(true);
+  const [reviewed, setReviewed] = useState(true);
+  const [attachmentsReviewed, setAttachmentsReviewed] = useState(true);
   const [copied, setCopied] = useState(false);
   const [historyExpanded, setHistoryExpanded] = useState(false);
-  const [conversationConfirmed, setConversationConfirmed] = useState(false);
+  const [conversationConfirmed, setConversationConfirmed] = useState(true);
   const [now, setNow] = useState(Date.now());
   const browserPositions = useRef(new Map<SourceTool, BrowserPosition>());
   const restoringBrowser = useRef<
@@ -186,7 +199,7 @@ export default function TaskHandoff({
   const dialogBody = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (dialogBody.current) dialogBody.current.scrollTop = 0;
-  }, [view, source?.attachmentSession]);
+  }, [view, source?.attachmentSession, copied]);
   const actionLock = useRef(false);
   const listSequence = useRef(0);
   // Share pending reads: StrictMode replays mount effects, while IPC imports are exclusive.
@@ -198,9 +211,9 @@ export default function TaskHandoff({
   const returnFocus = useRef<HTMLButtonElement | null>(null);
 
   const invalidate = () => {
-    setAttachmentsReviewed(false);
+    setAttachmentsReviewed(true);
     setPreview(undefined);
-    setReviewed(false);
+    setReviewed(true);
     setCopied(false);
     setDialogError("");
   };
@@ -250,17 +263,16 @@ export default function TaskHandoff({
     }
     setContextExported("");
     setSource(value);
-    setAttachmentValid(true);
     invalidate();
-    setStopped(false);
-    setWorkspace(false);
+    setStopped(true);
+    setWorkspace(true);
     setOptions({
       includeTranscript: true,
       includeWorkspace: true,
       taskScope: "project",
     });
     setHistoryExpanded(false);
-    setConversationConfirmed(false);
+    setConversationConfirmed(true);
     setTarget(value.source === "Codex" ? "ClaudeCode" : "Codex");
   };
   const loadTasks = async (
@@ -307,6 +319,11 @@ export default function TaskHandoff({
     try {
       const page = await request;
       if (sequence !== listSequence.current || !page) return;
+      const total =
+        page.coverage?.indexedRecords ??
+        (!activeProject && !debouncedQuery && !kind ? page.total : undefined);
+      if (total !== undefined)
+        setToolTotals((current) => ({ ...current, [tool]: total }));
       if (
         page.origin !== "history-index" &&
         (tool === "Codex" || tool === "ClaudeCode") &&
@@ -427,6 +444,12 @@ export default function TaskHandoff({
     }
   };
   const readBusy = listBusy || query !== debouncedQuery;
+  useEffect(() => {
+    setLoadingSlow(false);
+    if (!readBusy && !detectBusy) return;
+    const timer = setTimeout(() => setLoadingSlow(true), 8000);
+    return () => clearTimeout(timer);
+  }, [readBusy, detectBusy, activeTool]);
   const isOpen = view !== null;
   useEffect(() => {
     const element = dialog.current;
@@ -504,12 +527,57 @@ export default function TaskHandoff({
       <div className="page-heading">
         <div>
           <h1>任务接续</h1>
-          <p>找到一条会话，把需要的上下文交给另一个 AI。</p>
+          <p>把已有对话、任务进度和附件交给另一个 AI，继续完成任务。</p>
         </div>
         <span className="handoff-badge">
           <ShieldCheck size={15} /> 本地读取 · 确认后复制
         </span>
       </div>
+      {(readBusy || detectBusy) && <div className="handoff-loading-status" role="status" aria-live="polite">
+        <span className="handoff-loading-icon"><Loader2 className="spin" size={24} aria-hidden="true" /></span>
+        <div>
+          <strong>{readBusy
+            ? `正在${catalog ? "更新" : "读取"} ${toolLabel(activeTool)} 会话…`
+            : "正在识别本机工具并统计会话…"}</strong>
+          <p>{loadingSlow
+            ? "首次读取或会话较多时可能需要更久。你可以先查看其他页面，完成后会保留结果。"
+            : readBusy
+              ? catalog ? "正在更新项目与会话列表，暂时保留上次结果。" : "正在整理项目与会话列表，完成后会自动展示。"
+              : catalog ? "当前会话已可使用，统计完成后会更新其他工具的会话数量。" : "统计完成后会更新可用来源和会话数量。"}</p>
+        </div>
+      </div>}
+      <section className="handoff-quickstart" aria-label="任务接续使用方法">
+        <ol>
+          <li>
+            <span>1</span>
+            <div>
+              <strong>选择来源会话</strong>
+              <p>切换来源工具，找到会话后点击“接续”。</p>
+            </div>
+          </li>
+          <li>
+            <span>2</span>
+            <div>
+              <strong>确认目标与内容</strong>
+              <p>填写下一步任务，按需携带对话和附件。</p>
+            </div>
+          </li>
+          <li>
+            <span>3</span>
+            <div>
+              <strong>粘贴到目标 AI</strong>
+              <p>复制后，去目标工具的输入框粘贴并发送。</p>
+            </div>
+          </li>
+        </ol>
+        <div className="handoff-quickstart-tip">
+          <Copy size={18} />
+          <p>
+            <strong>带附件也能轻松接续：</strong>
+            附件包保存到任意目录后，接续内容与附件路径会自动复制到剪贴板。
+          </p>
+        </div>
+      </section>
       <div className="handoff-tool-tabs" role="tablist" aria-label="来源工具">
         {tools.map((tool) => (
           <button
@@ -522,23 +590,35 @@ export default function TaskHandoff({
             onClick={() => switchTool(tool)}
           >
             <strong>{toolLabel(tool)}</strong>
-            {activeTool === tool && (
-              <small>
-                {listBusy
-                  ? "读取中…"
-                  : listError
-                    ? "读取失败"
-                    : `已加载 ${tasks.length} 条`}
-              </small>
-            )}
+            <span
+              className="handoff-tool-count"
+              aria-label={
+                toolTotals[tool] !== undefined
+                  ? `全部 ${toolTotals[tool].toLocaleString()} 条会话`
+                  : detectBusy
+                    ? "正在统计会话总数"
+                    : "会话总数暂不可用"
+              }
+              title={
+                toolTotals[tool] !== undefined
+                  ? `全部 ${toolTotals[tool].toLocaleString()} 条会话（包含未加载的分页）`
+                  : detectBusy
+                    ? "正在统计会话总数"
+                    : "会话总数暂不可用，请刷新或重新识别工具"
+              }
+            >
+              {toolTotals[tool]?.toLocaleString() ?? (detectBusy ? "…" : "—")}
+            </span>
           </button>
         ))}
       </div>
-      <section className="handoff-browser" aria-label="会话浏览">
+      <section className="handoff-browser" aria-label="会话浏览" aria-busy={readBusy}>
         <div className="handoff-browser-head">
           <div>
             <h2>选择要接续的会话</h2>
-            <p>按项目浏览；点击“接续”后选择目标和携带内容。</p>
+            <p>
+              先选来源工具，再按项目或关键词查找。想先查看内容，可点击“预览记录”。
+            </p>
           </div>
           <div className="handoff-actions">
             <button
@@ -612,12 +692,10 @@ export default function TaskHandoff({
             )}
           </div>
         )}
-        {listBusy && (
-          <p className="handoff-loading" role="status">
-            <Loader2 className="spin" size={17} /> 正在读取{" "}
-            {toolLabel(activeTool)} 会话摘要…
-          </p>
-        )}
+        {readBusy && !catalog && <div className="handoff-loading-skeleton" aria-hidden="true">
+          <div className="handoff-skeleton-projects">{[0, 1, 2, 3].map(i => <span className="handoff-skeleton-line" key={i} />)}</div>
+          <div className="handoff-skeleton-conversations">{[0, 1, 2].map(i => <div className="handoff-skeleton-card" key={i}><span className="handoff-skeleton-line" /><span className="handoff-skeleton-line short" /></div>)}</div>
+        </div>}
         {listError && (
           <div className="notice amber" role="alert">
             <div>
@@ -687,6 +765,11 @@ export default function TaskHandoff({
                   const page =
                     await api.addHandoffSourceDirectory?.(activeTool);
                   if (page) {
+                    if (page.total !== undefined)
+                      setToolTotals((current) => ({
+                        ...current,
+                        [activeTool]: page.total,
+                      }));
                     setCatalog(page);
                     setTasks(page.tasks);
                     setActiveProject("");
@@ -1006,19 +1089,36 @@ export default function TaskHandoff({
                 ? "会话预览"
                 : view === "preview"
                   ? copied
-                    ? "已复制接续内容"
+                    ? "接续内容已复制"
                     : preview?.exportedPath
                       ? "附件包已导出"
                       : "检查接续内容"
                   : "接续这条会话"}
             </h2>
-            <p>
+            <p hidden={view !== "read"}>
               {view === "read"
                 ? "本地读取 · 已脱敏 · 只读核对"
                 : view === "preview"
                   ? `${toolLabel(sourceTool)} → ${toolLabel(target)}`
                   : "选择目标 AI，以及本次要携带的内容。"}
             </p>
+            {view !== "read" && (
+              <ol className="handoff-dialog-steps" aria-label="接续进度">
+                {["选择内容", "检查并复制", "粘贴接续"].map((label, index) => {
+                  const current = copied ? 2 : view === "preview" ? 1 : 0;
+                  return (
+                    <li
+                      key={label}
+                      className={index <= current ? "active" : ""}
+                      aria-current={index === current ? "step" : undefined}
+                    >
+                      <span>{index + 1}</span>
+                      {label}
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
           </div>
           <button
             className="handoff-icon-button"
@@ -1042,6 +1142,29 @@ export default function TaskHandoff({
           )}
           {source && (
             <>
+              {copied && (
+                <div className="handoff-success" role="status">
+                  <CheckCircle2 size={22} />
+                  <div>
+                    <strong>
+                      {preview?.attachments
+                        ? "接续内容与附件路径已自动复制"
+                        : "接续内容已复制到剪贴板"}
+                    </strong>
+                    <p>
+                      下一步：打开 {toolLabel(target)}，在输入框粘贴并发送。
+                      {projectTask
+                        ? "请使用正确的项目工作区。"
+                        : "本次仅继续对话。"}
+                    </p>
+                    {preview?.attachments && (
+                      <p>
+                        附件包可留在当前保存位置。同机且支持本地文件的工具可按路径读取；网页工具或另一台设备需手动上传附件包。
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="handoff-source">
                 <small>
                   {toolLabel(sourceTool)} ·{" "}
@@ -1096,7 +1219,7 @@ export default function TaskHandoff({
                           className={target === tool ? "active" : ""}
                           onClick={() => {
                             setTarget(tool);
-                            setWorkspace(false);
+                            setWorkspace(true);
                             invalidate();
                           }}
                         >
@@ -1139,9 +1262,9 @@ export default function TaskHandoff({
                               taskScope: value,
                               includeWorkspace: value === "project",
                             }));
-                            setStopped(false);
-                            setWorkspace(false);
-                            setConversationConfirmed(false);
+                            setStopped(true);
+                            setWorkspace(true);
+                            setConversationConfirmed(true);
                             invalidate();
                           }}
                         />
@@ -1156,12 +1279,6 @@ export default function TaskHandoff({
                   </fieldset>
                   <fieldset className="handoff-includes">
                     <legend>本次携带的内容</legend>
-                    <label>
-                      <input type="checkbox" checked disabled />
-                      <span>
-                        本次接续目标<small>始终携带，由你填写</small>
-                      </span>
-                    </label>
                     <label>
                       <input
                         type="checkbox"
@@ -1216,7 +1333,6 @@ export default function TaskHandoff({
                     busy={busy}
                     options={options}
                     run={perform}
-                    onValidityChange={setAttachmentValid}
                     onChange={(value) => {
                       setOptions((previous) => ({ ...previous, ...value }));
                       invalidate();
@@ -1233,7 +1349,7 @@ export default function TaskHandoff({
                       setHistoryExpanded(event.currentTarget.open)
                     }
                   >
-                    <summary>核对会话历史与原始上下文 · 可选导出</summary>
+                    <summary>查看对话 / 导出原始记录（可选）</summary>
                     {historyExpanded && contextViewer}
                   </details>
                   <details className="handoff-warnings">
@@ -1262,8 +1378,17 @@ export default function TaskHandoff({
                         附件接续包 · 已选 {preview.attachments.entries.length}{" "}
                         条 · {attachmentSize(preview.attachments.bytes)}
                       </strong>
+                      <p className="handoff-export-emphasis">
+                        <Copy size={18} />
+                        {preview.exportedPath
+                          ? copied
+                            ? "已自动复制，去目标工具粘贴即可"
+                            : "附件包已保存，点击下方按钮重试复制"
+                          : "保存到任意目录 → 自动复制接续内容与路径 → 去目标工具粘贴"}
+                      </p>
                       <p>
-                        包含交接说明、附件与消息对应清单。
+                        上方大小为所选附件合计；附件保存在本机，剪贴板只放接续文字和路径。ZIP
+                        另含交接说明和附件清单。
                         {preview.attachments.omitted > 0
                           ? `另有 ${preview.attachments.omitted} 条记录未携带。`
                           : ""}
@@ -1274,18 +1399,32 @@ export default function TaskHandoff({
                       {preview.exportedPath ? (
                         <p role="status">
                           已保存到：<code>{preview.exportedPath}</code>
-                          。请在目标工具中选择附件包或解压后读取；复制说明不会上传文件。
+                          {copied
+                            ? "。说明与包路径已自动复制到剪贴板，可直接粘贴到目标工具。"
+                            : "。说明与包路径已备好，点击下方按钮复制。"}
                         </p>
                       ) : (
-                        <p>确认后选择保存目录；取消保存不会导出或复制。</p>
+                        <p>
+                          点击“导出附件并复制”，选择保存目录即可。取消保存可返回继续调整。
+                        </p>
                       )}
                     </div>
                   )}
                   <div className="handoff-preview-meta">
-                    <span>以下是实际复制的全部内容</span>
                     <span>
-                      {preview.content.length.toLocaleString()} 字符 · 10
-                      分钟内有效
+                      {copied
+                        ? "已复制的全部文字"
+                        : preview.attachments && !preview.exportedPath
+                          ? "接续文字预览 · 保存后自动加入附件包路径"
+                          : "将复制的全部文字"}
+                    </span>
+                    <span>
+                      {preview.content.length.toLocaleString()} 字符 ·{" "}
+                      {copied
+                        ? "已复制"
+                        : previewExpired
+                          ? "已过期"
+                          : `${Math.max(1, Math.ceil((preview.expires - now) / 60000))} 分钟内有效`}
                     </span>
                   </div>
                   <HandoffTextPreview
@@ -1304,7 +1443,7 @@ export default function TaskHandoff({
                         : "不携带来源工作区"}{" "}
                       ·{" "}
                       {preview.attachments
-                        ? `已选择 ${preview.attachments.entries.length} 项附件${preview.exportedPath ? "，附件包已保存，尚需复制说明" : "，需先导出附件包"}`
+                        ? `已选择 ${preview.attachments.entries.length} 项附件${copied ? "，附件包已保存，内容与路径已复制" : preview.exportedPath ? "，附件包已保存，等待重试复制" : "，保存后自动复制内容与路径"}`
                         : contextExported && options.includeTranscript
                           ? "附原始归档目录路径；附件覆盖以归档清单为准"
                           : "未携带附件"}
@@ -1316,23 +1455,7 @@ export default function TaskHandoff({
                       预览已过期。请点击“调整内容”后重新生成；当前目标和选择会保留。
                     </p>
                   )}
-                  {copied ? (
-                    <div className="handoff-success" role="status">
-                      <CheckCircle2 size={20} />
-                      <div>
-                        <strong>
-                          已复制，接下来粘贴到 {toolLabel(target)}
-                        </strong>
-                        <p>
-                          {preview.attachments
-                            ? "接下来在目标工具中选择附件包，或解压后让它读取附件。仅粘贴说明不会上传文件；请确认目标工具能访问这些文件。"
-                            : projectTask
-                              ? "在目标工具中打开正确工作区，粘贴并发送后开始接续。本应用尚未发送或启动任务。"
-                              : "在目标工具中打开对话，粘贴并发送后继续讨论。本次未授权项目或文件操作。"}
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
+                  {!copied && (
                     <fieldset className="handoff-confirmations">
                       <legend>接续前确认</legend>
                       {projectTask ? (
@@ -1388,7 +1511,7 @@ export default function TaskHandoff({
                               setAttachmentsReviewed(e.target.checked)
                             }
                           />{" "}
-                          已检查所选附件原内容（未经脱敏），同意导出
+                          已检查所选附件（文字中的已知密钥已遮盖，图片等二进制附件为原内容），同意导出
                         </label>
                       )}
                     </fieldset>
@@ -1416,19 +1539,45 @@ export default function TaskHandoff({
           ) : view === "configure" ? (
             <>
               <span>
-                {!attachmentValid
-                  ? "请选择附件并确认未携带的内容。"
-                  : source?.context && options.includeTranscript
-                    ? contextExported
-                      ? "已导出全文，预览将附上完整上下文路径。"
-                      : source.transcriptFormat === "conversation-text"
-                        ? "直接复制全部对话文字，无需导出；完整原始记录可选导出。"
-                        : "可直接生成预览并携带历史片段；完整上下文可选导出。"
-                    : "生成预览后还可返回调整。"}
+                {!goal.trim()
+                  ? "请填写本次要继续的任务。"
+                  : options.packAttachments
+                    ? "附件会按可用情况自动处理，下一步检查接续内容。"
+                    : source?.context && options.includeTranscript
+                      ? contextExported
+                        ? "已导出全文，预览将附上完整上下文路径。"
+                        : source.transcriptFormat === "conversation-text"
+                          ? "直接复制全部对话文字，无需导出；完整原始记录可选导出。"
+                          : "可直接生成预览并携带历史片段；完整上下文可选导出。"
+                      : "生成预览后还可返回调整。"}
+                {source?.attachmentSession && !options.packAttachments && (
+                  <button
+                    type="button"
+                    className="handoff-footer-link"
+                    disabled={busy}
+                    onClick={() => {
+                      const attachments =
+                        dialogBody.current?.querySelector<HTMLElement>(
+                          ".handoff-attachments",
+                        );
+                      attachments
+                        ?.querySelector<HTMLInputElement>(
+                          ".handoff-pack-toggle input",
+                        )
+                        ?.focus({ preventScroll: true });
+                      attachments?.scrollIntoView({
+                        block: "start",
+                        behavior: "smooth",
+                      });
+                    }}
+                  >
+                    需要带附件？点此选择
+                  </button>
+                )}
               </span>
               <button
                 className="primary"
-                disabled={busy || !source || !goal.trim() || !attachmentValid}
+                disabled={busy || !source || !goal.trim()}
                 onClick={() =>
                   void perform(async () => {
                     const next = await api.previewHandoff(
@@ -1438,7 +1587,7 @@ export default function TaskHandoff({
                     );
                     setPreview(next);
                     setNow(Date.now());
-                    setReviewed(false);
+                    setReviewed(true);
                     setCopied(false);
                     setView("preview");
                   })
@@ -1478,7 +1627,20 @@ export default function TaskHandoff({
                       const result = await api.exportHandoffPackage(
                         preview.token,
                       );
-                      if (result) setPreview(result.preview);
+                      if (result) {
+                        // The export regenerates the preview with the package
+                        // path embedded; copy that combined text right away so
+                        // the user can paste it into the target tool directly.
+                        setPreview(result.preview);
+                        try {
+                          await api.copyHandoff(result.preview.token);
+                        } catch (error) {
+                          throw new Error(
+                            `附件包已保存，但自动复制失败。请点击“复制接续内容与附件路径”重试。${errorText(error)}`,
+                          );
+                        }
+                        setCopied(true);
+                      }
                     })
                   }
                 >
@@ -1487,7 +1649,7 @@ export default function TaskHandoff({
                   ) : (
                     <FileUp size={16} />
                   )}
-                  确认并导出附件接续包
+                  {busy ? "正在导出并复制…" : "导出附件并复制"}
                 </button>
               ) : (
                 <button
@@ -1508,7 +1670,7 @@ export default function TaskHandoff({
                     <Copy size={16} />
                   )}
                   {preview?.exportedPath
-                    ? "复制说明与附件包路径"
+                    ? "复制接续内容与附件路径"
                     : "确认并复制接续内容"}
                 </button>
               )}

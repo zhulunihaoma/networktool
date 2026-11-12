@@ -60,13 +60,25 @@ test("403 / 451 → restricted，不误报断网或登录", () => {
   }
 });
 
-test("429 / 503 → busy，不推断全球故障", () => {
+test("429 / 503 → busy；429 区分限速/配额，5xx 不推断全球故障", () => {
   const { provider, endpoint } = find("openai-api");
-  for (const status of [429, 503]) {
-    const result = classifyProvider(provider, endpoint, [sample({ httpStatus: status })], "直连");
-    assert.equal(result.status, "busy");
-    assert.match(result.suggestion, /不能证明平台全球故障/);
-  }
+  const limited = classifyProvider(
+    provider,
+    endpoint,
+    [sample({ httpStatus: 429 })],
+    "直连",
+  );
+  assert.equal(limited.status, "busy");
+  assert.match(limited.suggestion, /配额用尽或风控拦截/);
+  assert.match(limited.suggestion, /不是本机网络故障/);
+  const serverError = classifyProvider(
+    provider,
+    endpoint,
+    [sample({ httpStatus: 503 })],
+    "直连",
+  );
+  assert.equal(serverError.status, "busy");
+  assert.match(serverError.suggestion, /不能证明平台全球故障/);
 });
 
 test("未在 expectAnon 内的其他状态 → reachable 但标注未登记", () => {

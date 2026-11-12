@@ -145,9 +145,17 @@ export interface ExportPreview {
   format: "md" | "json";
 }
 export interface DesktopAPI extends importAssistantAPI, HandoffAPI, MemoryAPI, AppUpdateAPI {
+  security?: import("./security").SecurityAPI;
   skills(): Promise<SkillScan>;
+  skillPreference?(id: string, kind: "preserve" | "ignore-risk", value: boolean): Promise<SkillScan>;
+  compareSkills?(left: string, right: string): Promise<import("./skills").SkillComparison>;
+  previewMergeSkills?(keepId: string, ids: string[]): Promise<SkillDeletePreview>;
+  mergeSkills?(keepId: string, ids: string[], token: string): Promise<SkillDeleteResult[]>;
+  skillTidy?(): Promise<import("./skills").SkillTidyReport>;
+  applySkillTidy?(ids: string[], token: string): Promise<import("./skills").SkillTidyResult[]>;
+  revertSkillMove?(id: string): Promise<import("./skills").SkillMoveRecord>;
   previewSkills(ids: string[], target: string): Promise<SkillCopyPreview>;
-  copySkills(ids: string[], target: string, token: string, autoConvert: boolean): Promise<SkillCopyResult[]>;
+  copySkills(ids: string[], target: string, token: string, autoConvert: boolean, riskAcknowledged?: boolean): Promise<SkillCopyResult[]>;
   previewDeleteSkills(ids: string[]): Promise<SkillDeletePreview>;
   deleteSkills(ids: string[], token: string): Promise<SkillDeleteResult[]>;
   restoreSkill(id: string): Promise<SkillTrashEntry>;
@@ -211,6 +219,9 @@ export interface AIPlatform {
   color: string;
   processNames: string[];
   source: string;
+  // Optional path-diagnosis reference host. Must be a documented public
+  // entrance, never an unverified backend domain guessed from decompilation.
+  networkHost?: string;
 }
 export type PlatformStatus =
   | "pending"
@@ -348,6 +359,14 @@ export interface TriageObservation {
   markers: number[];
   events: { time: number; message: string }[];
 }
+export interface TriageGuidance {
+  productId: string;
+  facts: string[];
+  manualSteps: string[];
+  sourceLabel: string;
+  sourceUrl: string;
+  reviewedAt: string;
+}
 export interface TriageRun {
   id: string;
   targetId: string;
@@ -362,4 +381,5 @@ export interface TriageRun {
   comparison?: string;
   ipPath?: IPPathReport;
   ipv6Recovery?: IPv6RepairPlan;
+  guidance?: TriageGuidance;
 }

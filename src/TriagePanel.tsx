@@ -43,7 +43,9 @@ export default function TriagePanel({
   useEffect(() => {
     if (expandRequested) setExpanded(true);
   }, [expandRequested]);
-  const [run, setRun] = useState<TriageRun>(() => newTriage(initialTarget || "codex"));
+  // No reviewed public entrance is not the same as Codex: falling back to a
+  // target here would display another vendor's result under this product's name.
+  const [run, setRun] = useState<TriageRun>(() => newTriage(initialTarget));
   const [target, setTarget] = useState(initialTarget);
   const [working, setWorking] = useState<string>();
   const [message, setMessage] = useState("");
@@ -104,7 +106,18 @@ export default function TriagePanel({
         setRun(await api.observeTriage(run.id));
       } else setMessage((await api.triageAction(run.id, action)).message);
     });
-  const chosen = TRIAGE_TARGETS.find((p) => p.id === run.targetId)!;
+  const chosen = TRIAGE_TARGETS.find((p) => p.id === run.targetId);
+  const chosenName = chosen?.name ?? "所选入口";
+  const priorityStep = run.steps.find(
+    (s) => s.id === run.priorityIds[0],
+  );
+  // The prominent fix button is the priority step's own leading action;
+  // report-copying stays in the step list instead of hijacking the CTA.
+  const primaryAction =
+    priorityStep?.actions.find(
+      (a) =>
+        !["copy_report", "copy_ipv6_plan", "copy_ipv6_restore"].includes(a),
+    ) || "retry";
   const done = run.steps.filter(
     (s) => !["pending", "checking"].includes(s.status),
   ).length;
@@ -177,6 +190,12 @@ export default function TriagePanel({
           <p className="triage-note">
             此处独立检查所选公开入口与本机连接，不代表应用实际 API 配置；已有结果属于下方标注的对象。按本次证据推荐处理项目，处理后请在原工具复测。
           </p>
+          {!chosen && (
+            <p className="triage-note">
+              该工具没有已核实的公开入口参考对象，本工具不猜测其服务地址。
+              请在「检查相关模型服务」中指定实际使用的 API 或代理地址，或先在下方选择一个已收录的公开入口。
+            </p>
+          )}
           {run.status === "idle" ? (
             <p className="triage-empty">
               选择工具并开始排查。先确认基础网络，再检查代理、解析和入口，最后观察重连。
@@ -185,7 +204,7 @@ export default function TriagePanel({
             <>
               <div className="triage-summary" aria-live="polite">
                 <strong>
-                  {chosen.name} ·{" "}
+                  {chosenName} ·{" "}
                   {scanning
                     ? `检查进度 ${done}/5`
                     : run.status === "cancelled"
@@ -201,6 +220,45 @@ export default function TriagePanel({
                   </small>
                 )}
               </div>
+              {run.status === "completed" && priorityStep && (
+                <div className="triage-next" aria-live="polite">
+                  <strong>当前最该做的一件事</strong>
+                  <p>{priorityStep.summary}</p>
+                  <button
+                    className="primary"
+                    disabled={disabled}
+                    onClick={() => act(primaryAction)}
+                  >
+                    {working === primaryAction && (
+                      <Loader2 size={14} className="spin" />
+                    )}
+                    {primaryAction === "retry"
+                      ? `重新检查${chosenName}`
+                      : TRIAGE_ACTIONS[primaryAction]}
+                  </button>
+                </div>
+              )}
+              {run.guidance && (
+                <details className="triage-guidance">
+                  <summary>
+                    {chosenName} 官方网络说明 · 适配草案（核对{" "}
+                    {run.guidance.reviewedAt}）
+                  </summary>
+                  {run.guidance.facts.map((fact) => (
+                    <p key={fact}>{fact}</p>
+                  ))}
+                  <a
+                    href={run.guidance.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {run.guidance.sourceLabel}
+                  </a>
+                  <small>
+                    来自公开官方资料的整理，尚未在本机版本实测；不作为修复依据自动执行。
+                  </small>
+                </details>
+              )}
               <ol className="triage-steps">
                 {run.steps.map((step, index) => (
                   <li key={step.id} className={`triage-step ${step.status}`}>

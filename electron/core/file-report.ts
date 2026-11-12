@@ -10,7 +10,47 @@ export function fileAuditReport(
   format: "md" | "json",
 ): ExportPreview {
   const payload = {
-    schema_version: 1,
+    schema_version: 2,
+    workflow: workspace.workflow
+      ? {
+          hook: workspace.workflow.hook,
+          tasks: workspace.workflow.tasks
+            .filter((t) => !scopeId || t.scopeId === scopeId)
+            .map((t) => ({
+              id: t.id,
+              scope: alias(t.scopeId, "scope"),
+              object: alias(t.resourceId, "file"),
+              kind: t.kind,
+              status: t.status,
+              policy_revision: t.revision,
+              created_at: t.createdAt,
+              bytes_returned: t.bytes ?? null,
+              model_receipt: null,
+            })),
+          grants: workspace.workflow.grants
+            .filter((g) =>
+              workspace.workflow!.tasks.some(
+                (t) => t.id === g.taskId && (!scopeId || t.scopeId === scopeId),
+              ),
+            )
+            .map((g) => ({
+              id: g.id,
+              task_id: g.taskId,
+              status: g.status,
+              expires_at: g.expiresAt,
+            })),
+          events: workspace.workflow.events
+            .filter((e) => !scopeId || e.scopeId === scopeId)
+            .map((e) => ({
+              id: e.id,
+              at: e.at,
+              kind: e.kind,
+              scope: alias(e.scopeId, "scope"),
+              object: e.resourceId ? alias(e.resourceId, "file") : null,
+              task_id: e.taskId ?? null,
+            })),
+        }
+      : null,
     scope: scopeId ? alias(scopeId, "scope") : "all",
     coverage: workspace.coverage,
     events: events
@@ -49,10 +89,11 @@ export function fileAuditReport(
       "文件路径与名称",
       "自由文本",
       "文件正文",
+      "授权原因",
     ],
     limitations: [
-      "只记录助手元数据扫描与本地策略校验，不代表第三方 AI 工具访问。",
-      "自检拒绝不是实际网关或系统阻断；没有工具上传或模型提交证据。",
+      "扫描与自检记录不代表实际访问；本地任务回执仅证明本应用的文本处理，不代表第三方 AI 工具访问。",
+      "自检拒绝不是系统阻断；文件规则钩子事件在安全中心独立记录，没有模型提交证据。",
       "确认提醒不改变规则，也不表示保护恢复。",
     ],
   };
@@ -77,6 +118,13 @@ export function fileAuditReport(
               `| ${e.seq} | ${e.time} | ${e.object || e.scope} | ${e.operation} | ${e.result} | ${e.source} | ${e.policy_revision ?? "—"} |`,
           ),
           "",
+          "## 本地任务回执",
+          "",
+          ...(payload.workflow?.tasks.map(
+            (t) =>
+              `- 请求 ${t.id} · ${t.kind} · ${t.status} · 本地返回 ${t.bytes_returned ?? 0} 字节 · 无模型提交回执`,
+          ) || ["暂无本地任务"]),
+          "",
           "## 自检提醒",
           "",
           ...payload.alerts.map(
@@ -84,7 +132,7 @@ export function fileAuditReport(
               `- ${a.rule} · ${a.object} · ${a.operation} · ${a.count} 次 · ${a.state} · 证据 ${a.evidence_ids.join(", ")}`,
           ),
           "",
-          "路径、名称和自由文本已隐藏；文件正文从未采集。",
+          "路径、名称、授权原因和自由文本已隐藏；文件正文未写入此报告。",
         ].join("\n");
   return {
     content,

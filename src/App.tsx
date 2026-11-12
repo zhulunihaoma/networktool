@@ -52,10 +52,12 @@ import type {
   StartInput,
 } from "./shared/types";
 import { createDemoAPI } from "./demo";
+import brandMark from "./assets/brand-mark.svg";
 import ToolHome from "./ToolHome";
 import ProvidersBoard from "./ProvidersBoard";
 import Modal from "./Modal";
 import FileProtection from "./FileProtection";
+import SecurityCenter from "./SecurityCenter";
 import SkillCenter from "./SkillCenter";
 import TaskHandoff from "./TaskHandoff";
 import MemoryWorkbench from "./MemoryWorkbench";
@@ -81,6 +83,7 @@ type Page =
   | "history"
   | "settings"
   | "files"
+  | "security"
   | "skills"
   | "memory"
   | "handoff";
@@ -151,17 +154,31 @@ export default function App() {
     [demo],
   );
   const [overview, setOverview] = useState<Overview>();
-  const [page, setPageValue] = useState<Page>("providers");
+  const [page, setPageValue] = useState<Page>("security");
   const [retainedPages, setRetainedPages] = useState(
-    new Set<Page>(["providers"]),
+    new Set<Page>(["security"]),
   );
+  const [handoffIntent, setHandoffIntent] = useState(false);
   const scrollPositions = useRef(new Map<Page, number>());
+  const prepareHandoff = () => {
+    setRetainedPages((previous) => previous.has("handoff")
+      ? previous
+      : new Set([...previous, "handoff"]));
+  };
+  useEffect(() => {
+    // Start only after navigation intent, so startup does not scan every source.
+    if (!handoffIntent) return;
+    const timer = setTimeout(prepareHandoff, 250);
+    return () => clearTimeout(timer);
+  }, [handoffIntent]);
   const setPage = (next: Page) => {
     scrollPositions.current.set(page, window.scrollY);
     setPageValue(next);
   };
   const [providerTool, setProviderTool] = useState<ToolInstall>();
-  const [triageRequested, setTriageRequested] = useState(false);
+  // Monotonic request counter, not a boolean: clicking the same tool card twice
+  // must re-expand and re-scroll the panel instead of being a no-op.
+  const [triageRequest, setTriageRequest] = useState(0);
   const [selected, setSelected] = useState<Session>();
   const [wizard, setWizard] = useState<"diagnose" | "compare">();
   const [wizardTool, setWizardTool] = useState<{
@@ -213,9 +230,9 @@ export default function App() {
   useEffect(() => {
     setSelected(undefined);
     setPageErrors({});
-    setRetainedPages(new Set<Page>(["providers"]));
+    setRetainedPages(new Set<Page>(["security"]));
     scrollPositions.current.clear();
-    setPage("providers");
+    setPage("security");
     void api
       .overview()
       .then(setOverview)
@@ -310,36 +327,38 @@ export default function App() {
       <aside className="sidebar">
         <div className="window-space" />
         <div className="brand">
-          <div className="brand-mark">
-            <Network size={23} />
-          </div>
+          <img className="brand-mark" src={brandMark} alt="" aria-hidden="true" />
           <div>
-            360AI盒子<small>AI 工具网络助手</small>
+            360AI盒子<small>AI 工具安全与效率助手</small>
           </div>
         </div>
         <div className="sidebar-label">工作空间</div>
         <nav>
           {[
-            { id: "handoff" as const, label: "任务接续", icon: ArrowRight },
-            nav[0],
-            nav[1],
             {
-              id: "files" as const,
-              label: "文件策略与审计",
+              id: "security" as const,
+              label: "安全中心",
               icon: ShieldCheck,
             },
+            { id: "handoff" as const, label: "任务接续", icon: ArrowRight },
             {
               id: "skills" as const,
               label: "Skill 中心",
               icon: Sparkles,
             },
+            nav[0],
+            nav[1],
             { id: "memory" as const, label: "记忆工作台", icon: Layers3 },
             nav[5],
           ].map((item) => (
             <button
               key={item.id}
               className={`nav-item ${page === item.id ? "active" : ""}`}
+              aria-current={page === item.id ? "page" : undefined}
               onClick={() => setPage(item.id)}
+              onMouseEnter={item.id === "handoff" ? () => setHandoffIntent(true) : undefined}
+              onMouseLeave={item.id === "handoff" ? () => setHandoffIntent(false) : undefined}
+              onFocus={item.id === "handoff" ? prepareHandoff : undefined}
             >
               <item.icon size={19} />
               <span>{item.label}</span>
@@ -356,6 +375,7 @@ export default function App() {
               <button
                 key={item.id}
                 className={`nav-item ${page === item.id ? "active" : ""}`}
+                aria-current={page === item.id ? "page" : undefined}
                 onClick={() => setPage(item.id)}
               >
                 <item.icon size={19} />
@@ -377,6 +397,7 @@ export default function App() {
           </div>
           <button
             className={`nav-item ${page === "settings" ? "active" : ""}`}
+            aria-current={page === "settings" ? "page" : undefined}
             onClick={() => setPage("settings")}
           >
             <Settings2 size={19} />
@@ -395,7 +416,9 @@ export default function App() {
             <span>
               {page === "settings"
                 ? "偏好设置"
-                : page === "files"
+                : page === "security"
+                  ? "安全中心"
+                  : page === "files"
                   ? "文件策略与审计"
                   : page === "skills"
                     ? "Skill 中心"
@@ -456,7 +479,7 @@ export default function App() {
                 onError={(text) => setErrorMessage(text, "providers")}
                 onAdvanced={() => setWizard("diagnose")}
                 tool={providerTool}
-                triageRequested={triageRequested}
+                triageRequest={triageRequest}
                 onClearTool={() => setProviderTool(undefined)}
                 onBack={() => setPage("home")}
               />
@@ -470,7 +493,11 @@ export default function App() {
                 onFiles={() => setPage("files")}
                 onProviders={(tool) => {
                   setProviderTool(tool);
-                  setTriageRequested(false);
+                  setPage("providers");
+                }}
+                onTriage={(tool) => {
+                  setProviderTool(tool);
+                  setTriageRequest((value) => value + 1);
                   setPage("providers");
                 }}
                 onToolDiagnosis={(install, componentId, feature) => {
@@ -478,6 +505,11 @@ export default function App() {
                   setWizard("diagnose");
                 }}
               />
+            </div>
+          )}
+          {(page === "security" || retainedPages.has("security")) && (
+            <div hidden={page !== "security"} key={`security-${demo}`}>
+              <SecurityCenter api={api} onError={(text) => setErrorMessage(text, "security")} onSkills={() => setPage('skills')} />
             </div>
           )}
           {(page === "files" || retainedPages.has("files")) && (
@@ -493,6 +525,7 @@ export default function App() {
               <SkillCenter
                 api={api}
                 onError={(text) => setErrorMessage(text, "skills")}
+                onSecurity={() => setPage('security')}
               />
             </div>
           )}

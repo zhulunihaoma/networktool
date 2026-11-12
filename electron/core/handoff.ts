@@ -19,6 +19,7 @@ import { WisCodeHistory } from "./wiscode-history";
 import { DshHistory } from "./dsh-history";
 import { CopilotCodeHistory } from "./copilot-code-history";
 import { HistoryService } from "./history-service";
+import type { HandoffSecurityEvent } from "../../src/shared/handoff-attachments";
 
 const execute = promisify(execFile);
 const LIMIT = 8 * 1024 * 1024;
@@ -34,7 +35,7 @@ export class HandoffManager {
     this.contextExportPath = undefined;
     data.attachmentSession = randomUUID();
     this.imported = data; this.digest = undefined; this.preview = undefined; this.package = undefined;
-    this.attachmentSet = new AttachmentSet(data);
+    this.attachmentSet = new AttachmentSet(data, this.options.onSecurityEvent);
     return data;
   }
   private checkedSession(session: string) {
@@ -55,7 +56,7 @@ export class HandoffManager {
   private ids = new Set<string>();
   private busy = false;
   private additional = { WorkBuddy: new WorkBuddyHistory(), ZCode: new ZCodeHistory(), WisCode: new WisCodeHistory(), DeepSeekHarness: new DshHistory(), CopilotCode: new CopilotCodeHistory() };
-  constructor(private run = runOpenCode, private codex = new CodexHistory(), private claude = new ClaudeHistory(), history?: HistoryService) { this.history = history; }
+  constructor(private run = runOpenCode, private codex = new CodexHistory(), private claude = new ClaudeHistory(), history?: HistoryService, private options: { onSecurityEvent?: (e: HandoffSecurityEvent) => void } = {}) { this.history = history; }
   readContext(id: string, offset = 0) { if (!this.history || this.imported?.context?.id !== id) throw new Error("请先读取当前会话的上下文。"); return this.history.archives.read(id, offset); }
   async exportContext(id: string, choose: () => Promise<string | undefined>) {
     if (!this.history || this.imported?.context?.id !== id) throw new Error("上下文已变更，请重新读取。");
@@ -157,9 +158,17 @@ export class HandoffManager {
     }
     if (options?.packAttachments) {
       if (!this.attachmentSet) throw new Error("请先识别会话附件。");
-      this.package = this.attachmentSet.selection(options);
-      const p = this.package;
-      content += `\n\n附件交接：本次选择 ${p.files.length} 条附件记录（按内容去重保存），合计 ${p.summary.bytes} 字节；另有 ${p.summary.omitted} 条记录未携带。${p.summary.complete ? "" : "本次未携带全部附件，或来源附件未能全部确认。"}\n附件内容未经脱敏，可能是来源工具转换后的版本。${options.taskScope === "conversation" ? "请由用户在目标工具中主动选择附件；不得自行访问工作区或执行命令。" : "请先解压接续包，再按清单读取。"}未携带或缺失内容不能推测。\n${p.files.map((f,i) => `${JSON.stringify(f.name)} · ${p.summary.entries[i].mime} · 消息 ${JSON.stringify(p.summary.entries[i].messageId)}`).join("\n")}`;
+      // Missing attachments are reported in the preview, not a separate confirmation step.
+      // An empty selection continues as text only; never create an empty ZIP.
+      const p = this.attachmentSet.selection({ ...options, allowPartialAttachments: true });
+      if (p.files.length) {
+        this.package = p;
+        const redacted = p.summary.entries.reduce((n, e) => n + (e.redactions || 0), 0), blocked = this.attachmentSet.blockedCount();
+        content += `\n\n附件交接：本次选择 ${p.files.length} 条附件记录（按内容去重保存），合计 ${p.summary.bytes} 字节；另有 ${p.summary.omitted} 条记录未携带。${p.summary.complete ? "" : "本次未携带全部附件，或来源附件未能全部确认。"}\n防泄露：${blocked ? `${blocked} 个凭据类文件已拒绝打包；` : ""}文本附件已按会话正文规则遮盖已知密钥${redacted ? `（共 ${redacted} 处）` : ""}；图片等二进制附件保持原样，可能是来源工具转换后的版本。${options.taskScope === "conversation" ? "请由用户在目标工具中主动选择附件；不得自行访问工作区或执行命令。" : "请先解压接续包，再按清单读取。"}未携带或缺失内容不能推测。\n${p.files.map((f,i) => `${JSON.stringify(f.name)} · ${p.summary.entries[i].mime} · 消息 ${JSON.stringify(p.summary.entries[i].messageId)}`).join("\n")}`;
+      } else content += "\n\n本次仅交接文字，没有选中的可用附件，不导出附件包。";
+      if (p.summary.omitted || !p.summary.complete) {
+        content += `\n\n附件缺口：${p.summary.omitted} 条已识别附件记录未携带。${p.warnings.join(" ")}未携带或未确认的内容不能推测。\n${p.omittedEntries.map(e => `${JSON.stringify(e.name)}：${e.status === "ready" ? "未选择携带" : e.note}`).join("\n")}`;
+      }
     } else content += this.contextExportPath && (options?.includeTranscript ?? true)
       ? options?.taskScope === "conversation" ? "\n\n本次复制对话文字与原始归档引用；不会上传附件，也不授权目标工具自动读取本机归档目录。" : "\n\n本次复制接续说明与对话文字；完整原始记录及可取得的附件请从上述导出目录读取，附件缺口见清单。"
       : "\n\n本次仅交接文字，未携带图片或文档附件。";

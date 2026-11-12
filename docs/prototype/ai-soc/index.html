@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI 行为安全 · 事件中心原型</title>
+<style>
+  :root{
+    --bg:#f7f9fb; --surface:#ffffff; --surface-soft:#fafbfc; --line:#e8edf3; --line-strong:#dce4ec;
+    --ink:#263546; --ink-2:#4a5b6b; --muted:#677481; --faint:#93a0ad;
+    --brand:#347f86; --brand-deep:#2a6b71; --brand-soft:#eef6f6; --brand-line:#cfe4e5;
+    --ok:#289b79; --ok-soft:#eef8f4; --warn:#a9792f; --warn-soft:#fbf4e8;
+    --danger:#b64848; --danger-soft:#fbefef; --info:#3272ed; --info-soft:#eef4fe;
+    --l4:#b64848; --l4-soft:#fbefef; --l3:#a9792f; --l3-soft:#fbf4e8;
+    --l2:#347f86; --l2-soft:#eef6f6; --l1:#677481; --l1-soft:#f2f5f7;
+    --shadow:0 1px 2px #22384f08, 0 8px 24px #22384f0a;
+    --radius:12px; --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:14px/1.6 Inter,-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+  code,kbd{font-family:var(--mono)}
+  .shell{display:flex;min-height:100vh}
+  /* ---------- sidebar ---------- */
+  .sidebar{
+    position:fixed;inset:0 auto 0 0;width:212px;display:flex;flex-direction:column;
+    background:var(--surface);border-right:1px solid var(--line);z-index:20;
+  }
+  .brand{display:flex;align-items:center;gap:10px;height:58px;padding:0 16px;border-bottom:1px solid var(--line)}
+  .brand-mark{
+    width:28px;height:28px;border-radius:8px;display:grid;place-items:center;flex:none;
+    background:linear-gradient(135deg,#3f8f96,#2a6b71);color:#fff;
+  }
+  .brand-mark svg{width:16px;height:16px}
+  .brand-name{font-weight:600;font-size:14px;letter-spacing:.2px}
+  .brand-sub{display:block;font-size:11px;color:var(--faint);font-weight:400;line-height:1.2;margin-top:1px}
+  .nav{flex:1;overflow:auto;padding:12px 10px 18px}
+  .nav-label{font-size:11px;letter-spacing:.08em;color:var(--faint);padding:12px 10px 6px;text-transform:uppercase}
+  .nav-item{
+    display:flex;align-items:center;gap:9px;width:100%;padding:8px 10px;border-radius:8px;
+    color:var(--ink-2);text-align:left;font-size:13.5px;transition:background .15s,color .15s;
+  }
+  .nav-item svg{width:15px;height:15px;flex:none;color:var(--faint)}
+  .nav-item:hover{background:var(--surface-soft);color:var(--ink)}
+  .nav-item:hover svg{color:var(--brand)}
+  .nav-item.is-active{background:var(--brand-soft);color:var(--brand-deep);font-weight:600}
+  .nav-item.is-active svg{color:var(--brand)}
+  .nav-item .new{
+    margin-left:auto;font-size:10px;padding:0 6px;height:17px;line-height:17px;border-radius:9px;
+    background:var(--brand);color:#fff;font-weight:500;
+  }
+  .nav-item .dot{margin-left:auto;width:6px;height:6px;border-radius:50%;background:var(--danger)}
+  .nav-sub{padding-left:26px;font-size:13px}
+  .sidebar-foot{border-top:1px solid var(--line);padding:12px 16px;font-size:11.5px;color:var(--faint);line-height:1.7}
+  .sidebar-foot b{color:var(--ink-2);font-weight:500}
+  /* ---------- main ---------- */
+  .main-wrap{margin-left:212px;flex:1;min-width:0;display:flex;flex-direction:column}
+  .topbar{
+    position:sticky;top:0;z-index:10;height:58px;display:flex;align-items:center;justify-content:space-between;
+    gap:16px;padding:0 26px;background:#fbfcfdcc;backdrop-filter:blur(10px);border-bottom:1px solid var(--line);
+  }
+  .crumb{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+  .crumb b{color:var(--ink);font-weight:500}
+  .crumb svg{width:13px;height:13px;color:var(--faint)}
+  .top-actions{display:flex;align-items:center;gap:8px}
+  .top-note{font-size:12px;color:var(--faint);margin-right:6px;display:flex;align-items:center;gap:6px}
+  .top-note .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+  .content{padding:24px 26px 40px;max-width:1440px;width:100%}
+  h1{margin:0;font-size:23px;line-height:1.3;letter-spacing:-.2px;font-weight:600}
+  h2{margin:0;font-size:15px;font-weight:600}
+  h3{margin:0;font-size:13.5px;font-weight:600}
+  p{margin:0}
+  .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:18px}
+  .page-desc{margin-top:5px;color:var(--muted);font-size:13px;max-width:780px}
+  .head-actions{display:flex;gap:8px;flex:none}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 13px;
+    border-radius:8px;font-size:13px;border:1px solid transparent;transition:all .15s;white-space:nowrap;
+  }
+  .btn svg{width:14px;height:14px}
+  .btn-primary{background:var(--brand);color:#fff}
+  .btn-primary:hover{background:var(--brand-deep)}
+  .btn-outline{border-color:var(--line-strong);background:var(--surface);color:var(--ink-2)}
+  .btn-outline:hover{border-color:var(--brand-line);color:var(--brand-deep);background:var(--brand-soft)}
+  .btn-ghost{color:var(--brand-deep)}
+  .btn-ghost:hover{background:var(--brand-soft)}
+  .btn-danger{background:var(--danger);color:#fff}
+  .btn-danger:hover{filter:brightness(.94)}
+  .btn-sm{height:26px;padding:0 9px;font-size:12px;border-radius:6px}
+  .btn:focus-visible,.nav-item:focus-visible,.chip:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+  /* ---------- tabs ---------- */
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:18px;overflow:auto}
+  .tab{
+    position:relative;padding:9px 12px 11px;font-size:13.5px;color:var(--muted);
+    border-bottom:2px solid transparent;transition:color .15s,border-color .15s;white-space:nowrap;
+  }
+  .tab:hover{color:var(--ink)}
+  .tab.is-active{color:var(--brand-deep);font-weight:600;border-color:var(--brand)}
+  .tab .count{
+    margin-left:6px;font-size:11px;padding:0 5px;border-radius:9px;background:var(--surface-soft);
+    border:1px solid var(--line);color:var(--muted);font-weight:500;
+  }
+  .tab.is-active .count{background:var(--brand-soft);border-color:var(--brand-line);color:var(--brand-deep)}
+  .panel[hidden]{display:none}
+  /* ---------- shared ---------- */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .card-pad{padding:18px 20px}
+  .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+  .card-head p{font-size:12.5px;color:var(--muted);margin-top:3px}
+  .grid{display:grid;gap:14px}
+  .muted{color:var(--muted)} .faint{color:var(--faint)} .small{font-size:12px}
+  .mono{font-family:var(--mono);font-size:12px}
+  .tag{
+    display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:5px;
+    font-size:11.5px;font-weight:500;border:1px solid transparent;white-space:nowrap;
+  }
+  .tag svg{width:11px;height:11px}
+  .tag-ok{background:var(--ok-soft);color:var(--ok);border-color:#cbe9de}
+  .tag-warn{background:var(--warn-soft);color:var(--warn);border-color:#f0e0c4}
+  .tag-danger{background:var(--danger-soft);color:var(--danger);border-color:#f2d6d6}
+  .tag-info{background:var(--info-soft);color:var(--info);border-color:#d8e4fb}
+  .tag-neutral{background:var(--surface-soft);color:var(--muted);border-color:var(--line)}
+  .tag-brand{background:var(--brand-soft);color:var(--brand-deep);border-color:var(--brand-line)}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12.5px}
+  .kv dt{color:var(--faint);white-space:nowrap}
+  .kv dd{margin:0;color:var(--ink-2);min-width:0;overflow-wrap:anywhere}
+  .note{
+    border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:12px;line-height:1.65;
+    background:var(--surface-soft);color:var(--muted);display:flex;gap:9px;align-items:flex-start;
+  }
+  .note svg{width:14px;height:14px;flex:none;margin-top:2px;color:var(--brand)}
+  .note.warn{background:var(--warn-soft);border-color:#f0e0c4;color:#7d5c25}
+  .note.warn svg{color:var(--warn)}
+  /* ---------- hero ---------- */
+  .hero{
+    position:relative;overflow:hidden;border-radius:var(--radius);border:1px solid var(--line);
+    background:
+      radial-gradient(60% 130% at 6% -30%, #e6f2f2 0%, transparent 62%),
+      radial-gradient(48% 120% at 82% -50%, #e9eefc 0%, transparent 60%),
+      var(--surface);
+    box-shadow:var(--shadow);padding:22px 24px;
+  }
+  .hero-inner{display:flex;gap:28px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+  .hero h1{font-size:20px}
+  .hero h1 span{color:var(--brand-deep)}
+  .hero p{margin-top:6px;font-size:13px;color:var(--muted);max-width:560px}
+  .hero-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  .hero-facts{display:flex;gap:24px;flex-wrap:wrap}
+  .fact{min-width:92px}
+  .fact b{display:block;font-size:21px;font-weight:600;letter-spacing:-.3px;line-height:1.25}
+  .fact span{font-size:12px;color:var(--muted)}
+  .fact b.danger{color:var(--danger)}
+  .fact b.ok{color:var(--ok)}
+  .fact b.warn{color:var(--warn)}
+  /* ---------- metric strip ---------- */
+  .evidence{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:14px}
+  .ev{
+    border:1px solid var(--line);border-radius:10px;padding:12px 13px;background:var(--surface);
+    transition:border-color .15s,box-shadow .15s;text-align:left;width:100%;
+  }
+  .ev:hover{border-color:var(--brand-line);box-shadow:0 3px 10px #347f8612}
+  .ev-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
+  .ev-ico{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;flex:none}
+  .ev-ico svg{width:13px;height:13px}
+  .ev b{display:block;margin-top:9px;font-size:19px;font-weight:600;letter-spacing:-.3px;line-height:1.2}
+  .ev span{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+  .ev i{display:block;font-size:11px;font-style:normal;color:var(--faint);margin-top:7px;padding-top:7px;border-top:1px dashed var(--line)}
+  /* ---------- split ---------- */
+  .split{display:grid;grid-template-columns:minmax(0,1.72fr) minmax(300px,1fr);gap:14px;align-items:start}
+  .split-wide{display:grid;grid-template-columns:minmax(340px,1fr) minmax(0,1.55fr);gap:14px;align-items:start}
+  /* ---------- incident list ---------- */
+  .inc-list{display:flex;flex-direction:column;gap:8px}
+  .inc{
+    border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface);
+    transition:border-color .15s,background .15s,box-shadow .15s;text-align:left;width:100%;display:block;
+  }
+  .inc:hover{border-color:var(--brand-line);box-shadow:0 3px 10px #347f8612}
+  .inc.is-active{border-color:var(--brand);background:var(--brand-soft);box-shadow:0 0 0 3px #347f8612}
+  .inc-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px}
+  .inc-top .sev{width:6px;height:6px;border-radius:50%;flex:none}
+  .inc-title{font-size:13px;font-weight:600;line-height:1.45}
+  .inc-sub{margin-top:5px;font-size:12px;color:var(--muted);line-height:1.6}
+  .inc-meta{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center}
+  .chain-mini{display:flex;align-items:center;gap:4px;margin-top:9px;flex-wrap:wrap}
+  .chain-mini .step{
+    font-size:10.5px;padding:1px 6px;border-radius:4px;background:var(--surface-soft);
+    border:1px solid var(--line);color:var(--muted);white-space:nowrap;
+  }
+  .chain-mini .arr{font-size:10px;color:var(--faint)}
+  .chain-mini .step.danger{background:var(--danger-soft);border-color:#f2d6d6;color:var(--danger)}
+  .chain-mini .step.warn{background:var(--warn-soft);border-color:#f0e0c4;color:var(--warn)}
+  /* ---------- level pills ---------- */
+  .lvl{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:4px;font-size:10.5px;font-weight:600;letter-spacing:.02em}
+  .lvl-L4{background:var(--l4-soft);color:var(--l4);border:1px solid #f2d6d6}
+  .lvl-L3{background:var(--l3-soft);color:var(--l3);border:1px solid #f0e0c4}
+  .lvl-L2{background:var(--l2-soft);color:var(--l2);border:1px solid var(--brand-line)}
+  .lvl-L1{background:var(--l1-soft);color:var(--l1);border:1px solid var(--line)}
+  /* ---------- detail panel ---------- */
+  .detail-empty{padding:44px 20px;text-align:center;color:var(--faint);font-size:13px}
+  .detail-empty svg{width:28px;height:28px;margin-bottom:10px;color:var(--line-strong)}
+  .dsec{margin-top:16px}
+  .dsec:first-child{margin-top:0}
+  .dsec h4{margin:0 0 8px;font-size:11.5px;color:var(--faint);font-weight:500;letter-spacing:.05em;text-transform:uppercase}
+  .merge-reason{
+    border:1px solid var(--brand-line);background:var(--brand-soft);border-radius:9px;
+    padding:10px 12px;font-size:12px;color:var(--brand-deep);line-height:1.7;
+  }
+  .merge-reason b{font-weight:600}
+  /* ---------- vertical timeline ---------- */
+  .vtl{position:relative;padding-left:2px}
+  .vtl-item{display:grid;grid-template-columns:52px 20px 1fr;gap:0 8px;padding-bottom:12px}
+  .vtl-time{font-size:11px;color:var(--faint);font-family:var(--mono);padding-top:3px;text-align:right}
+  .vtl-rail{position:relative;display:flex;justify-content:center}
+  .vtl-rail::before{content:"";position:absolute;top:14px;bottom:-12px;width:1px;background:var(--line)}
+  .vtl-item:last-child .vtl-rail::before{display:none}
+  .vtl-node{width:9px;height:9px;border-radius:50%;margin-top:6px;background:var(--surface);border:2px solid var(--muted);z-index:1}
+  .vtl-item[data-tone="danger"] .vtl-node{border-color:var(--danger);background:var(--danger-soft)}
+  .vtl-item[data-tone="warn"] .vtl-node{border-color:var(--warn);background:var(--warn-soft)}
+  .vtl-item[data-tone="ok"] .vtl-node{border-color:var(--ok);background:var(--ok-soft)}
+  .vtl-item[data-tone="info"] .vtl-node{border-color:var(--info);background:var(--info-soft)}
+  .vtl-card{border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:var(--surface)}
+  .vtl-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:12.5px;font-weight:600}
+  .vtl-body{margin-top:4px;font-size:12px;color:var(--muted);line-height:1.65}
+  .vtl-body code{background:var(--surface-soft);border:1px solid var(--line);border-radius:3px;padding:0 4px;font-size:11px;color:var(--ink-2)}
+  /* ---------- rules ---------- */
+  .rule{display:grid;grid-template-columns:1fr auto;gap:4px 16px;align-items:start;padding:15px 18px;border-bottom:1px solid var(--line)}
+  .rule:last-child{border-bottom:0}
+  .rule-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .rule-title h3{font-size:13.5px}
+  .rule-cond{
+    margin-top:7px;font-size:12px;color:var(--ink-2);background:var(--surface-soft);
+    border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-family:var(--mono);
+    overflow-wrap:anywhere;line-height:1.7;
+  }
+  .rule-cond .k{color:var(--brand-deep)}
+  .rule-cond .op{color:var(--danger)}
+  .rule-meta{display:flex;gap:14px;margin-top:8px;flex-wrap:wrap;font-size:11.5px;color:var(--faint)}
+  .rule-meta b{font-weight:500;color:var(--muted)}
+  .rule-side{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+  .switch{position:relative;width:34px;height:19px;border-radius:10px;background:var(--line-strong);transition:background .18s;flex:none}
+  .switch::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0002;transition:transform .18s}
+  .switch[aria-checked="true"]{background:var(--brand)}
+  .switch[aria-checked="true"]::after{transform:translateX(15px)}
+  .switch:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+  /* ---------- table ---------- */
+  table{width:100%;border-collapse:collapse}
+  thead th{
+    text-align:left;font-weight:500;font-size:11.5px;color:var(--faint);letter-spacing:.04em;
+    padding:9px 12px;border-bottom:1px solid var(--line);background:var(--surface-soft);white-space:nowrap;
+  }
+  tbody td{padding:11px 12px;border-bottom:1px solid var(--line);font-size:12.5px;vertical-align:top;color:var(--ink-2)}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover td{background:#fcfdfd}
+  td b{color:var(--ink);font-weight:600}
+  .table-card{overflow:hidden}
+  /* ---------- bars ---------- */
+  .bar-row{display:grid;grid-template-columns:56px 1fr 46px;gap:10px;align-items:center;padding:6px 0;font-size:12.5px}
+  .bar-track{height:7px;border-radius:4px;background:var(--line);overflow:hidden}
+  .bar-fill{display:block;height:100%;border-radius:4px;transition:width .5s cubic-bezier(.3,.8,.3,1)}
+  .bar-row .num{text-align:right;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  /* ---------- status rows ---------- */
+  .status-row{display:flex;align-items:center;gap:11px;padding:10px 0;border-bottom:1px dashed var(--line)}
+  .status-row:last-child{border-bottom:0;padding-bottom:0}
+  .st-ico{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;flex:none}
+  .st-ico svg{width:12px;height:12px}
+  .st-ico.ok{background:var(--ok-soft);color:var(--ok)}
+  .st-ico.warn{background:var(--warn-soft);color:var(--warn)}
+  .st-ico.danger{background:var(--danger-soft);color:var(--danger)}
+  .st-ico.info{background:var(--info-soft);color:var(--info)}
+  .st-main{flex:1;min-width:0}
+  .st-main b{display:block;font-size:12.5px;font-weight:600}
+  .st-main span{font-size:11.5px;color:var(--faint);display:block;margin-top:1px;overflow-wrap:anywhere}
+  /* ---------- agent rows ---------- */
+  .agent-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .agent-row:last-child{border-bottom:0;padding-bottom:0}
+  .agent-ico{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;flex:none;background:var(--brand-soft);color:var(--brand-deep)}
+  .agent-ico svg{width:14px;height:14px}
+  .agent-main{flex:1;min-width:0}
+  .agent-main b{display:block;font-size:12.5px;font-weight:600}
+  .agent-main span{font-size:11.5px;color:var(--faint)}
+  .meter{height:4px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:5px;width:100%}
+  .meter i{display:block;height:100%;border-radius:3px;transition:width .5s}
+  /* ---------- actions ---------- */
+  .act-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .act{
+    border:1px solid var(--line);border-radius:8px;padding:9px 11px;text-align:left;background:var(--surface);
+    transition:all .15s;display:flex;gap:8px;align-items:flex-start;
+  }
+  .act:hover{border-color:var(--brand-line);background:var(--brand-soft)}
+  .act svg{width:13px;height:13px;flex:none;margin-top:2px;color:var(--brand)}
+  .act b{display:block;font-size:12px;font-weight:600}
+  .act span{display:block;font-size:11px;color:var(--faint);margin-top:1px;line-height:1.45}
+  .act.done{border-color:#cbe9de;background:var(--ok-soft)}
+  .act.done svg{color:var(--ok)}
+  /* ---------- toast ---------- */
+  .toast{
+    position:fixed;left:50%;bottom:28px;transform:translate(-50%,14px);z-index:80;
+    background:#263546;color:#fff;font-size:12.5px;padding:9px 16px;border-radius:8px;
+    box-shadow:0 8px 28px #22384f33;opacity:0;pointer-events:none;transition:all .22s;
+    max-width:min(520px,90vw);
+  }
+  .toast.is-on{opacity:1;transform:translate(-50%,0)}
+  /* ---------- demo badge ---------- */
+  .demo-badge{
+    display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:11px;
+    background:var(--warn-soft);border:1px solid #f0e0c4;color:#7d5c25;font-size:11px;font-weight:500;
+  }
+  .demo-badge svg{width:11px;height:11px}
+  @media (max-width:1240px){
+    .split,.split-wide{grid-template-columns:1fr}
+    .evidence{grid-template-columns:repeat(3,minmax(0,1fr))}
+  }
+  @media (max-width:880px){
+    .sidebar{display:none}.main-wrap{margin-left:0}.content{padding:18px 16px 32px}
+    .evidence{grid-template-columns:1fr 1fr}.page-head{flex-direction:column;align-items:flex-start}
+    .act-grid{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z"/><path d="M9.2 12.2l2 2 3.6-4"/></symbol>
+  <symbol id="i-dot" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15M14 7l5 5-5 5"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/></symbol>
+  <symbol id="i-house" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 10.5L12 4l8 6.5V20H4z"/><path d="M9.5 20v-5h5v5"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></symbol>
+  <symbol id="i-blocks" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.6"/><rect x="13" y="3" width="8" height="8" rx="1.6"/><rect x="3" y="13" width="8" height="8" rx="1.6"/><rect x="13" y="13" width="8" height="8" rx="1.6"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3 4v5h5"/><path d="M12 8v4.5l3 1.8"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 4 12L16 12h5"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M4.6 6.9l2 1.2M17.4 15.9l2 1.2M2.8 12h2.4M18.8 12h2.4M4.6 17.1l2-1.2M17.4 8.1l2-1.2"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l9 16H3z"/><path d="M12 10v4.5M12 17.6v.2"/></symbol>
+  <symbol id="i-ban" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.2"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10M8 10.5l4 4 4-4"/><path d="M4.5 19.5h15"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M7.5 9.5l3 2.5-3 2.5M13 15h4"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v4M15 3v4"/><path d="M6.5 7h11v4.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 17v4"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="8" cy="8" r="4"/><path d="M11 11l8 8M16 16l2.2-2.2M18.5 18.5L21 16"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="4.5" y="10" width="15" height="10.5" rx="2"/><path d="M8 10V7.5a4 4 0 0 1 8 0V10"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M2.5 12S5.8 6 12 6s9.5 6 9.5 6-3.3 6-9.5 6S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="6" r="2.2"/><circle cx="7" cy="18" r="2.2"/><circle cx="17" cy="8" r="2.2"/><path d="M7 8.2v7.6M17 10.2c0 3.4-3.4 3.6-6.2 4.4"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M3 7.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4.5V10h-5.5"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.7 0l2.6-2.6A4 4 0 0 0 12.6 5.7L11 7.3"/><path d="M14 10a4 4 0 0 0-5.7 0L5.7 12.6A4 4 0 0 0 11.4 18.3l1.6-1.6"/></symbol>
+  <symbol id="i-database" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4.5 20c0-3.6 3.4-6 7.5-6s7.5 2.4 7.5 6"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M7 18a4.5 4.5 0 0 1-.3-9A6 6 0 0 1 18 9.5 4.2 4.2 0 0 1 17.5 18z"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4"/><path d="M5 4h11l-1.5 4L16 12H5z"/></symbol>
+</svg>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark"><svg><use href="#i-shield"/></svg></div>
+      <div>
+        <div class="brand-name">Network Lens</div>
+        <span class="brand-sub">AI 行为安全</span>
+      </div>
+    </div>
+    <nav class="nav" aria-label="主导航">
+      <button class="nav-item"><svg><use href="#i-arrow-right"/></svg>任务接续</button>
+      <button class="nav-item"><svg><use href="#i-globe"/></svg>网络检查</button>
+      <button class="nav-item"><svg><use href="#i-house"/></svg>本机应用</button>
+      <div class="nav-label">工作空间</div>
+      <button class="nav-item is-active"><svg><use href="#i-shield"/></svg>AI 行为安全<span class="new">新</span></button>
+      <button class="nav-item nav-sub" data-jump="overview"><svg><use href="#i-dot"/></svg>概览</button>
+      <button class="nav-item nav-sub" data-jump="incidents"><svg><use href="#i-dot"/></svg>事件链<span class="dot"></span></button>
+      <button class="nav-item nav-sub" data-jump="assets"><svg><use href="#i-dot"/></svg>资产与分级</button>
+      <button class="nav-item nav-sub" data-jump="egress"><svg><use href="#i-dot"/></svg>外送与处置</button>
+      <div class="nav-label">原有模块</div>
+      <button class="nav-item"><svg><use href="#i-blocks"/></svg>Skill 中心</button>
+      <button class="nav-item"><svg><use href="#i-layers"/></svg>记忆工作台</button>
+      <button class="nav-item"><svg><use href="#i-history"/></svg>诊断历史</button>
+    </nav>
+    <div class="sidebar-foot">
+      <b>仅本机判定</b> · 元数据可选外送<br />
+      正文默认不出端 · 保留 7 天
+    </div>
+  </aside>
+
+  <div class="main-wrap">
+    <header class="topbar">
+      <div class="crumb">
+        <span>AI 行为安全</span><svg><use href="#i-chevron"/></svg><b id="crumb-current">概览</b>
+      </div>
+      <div class="top-actions">
+        <span class="demo-badge"><svg><use href="#i-info"/></svg>演示数据</span>
+        <span class="top-note"><i class="dot"></i>外送通道已连接</span>
+        <button class="btn btn-ghost btn-sm" onclick="toast('已重新扫描 5 个 AI 工具的接入状态')"><svg><use href="#i-refresh"/></svg>重新检查</button>
+      </div>
+    </header>
+    <main class="content">
+      <div class="tabs" role="tablist" aria-label="AI 行为安全视图">
+        <button class="tab is-active" role="tab" data-panel="overview" aria-selected="true">概览</button>
+        <button class="tab" role="tab" data-panel="incidents" aria-selected="false">事件链<span class="count" id="tab-inc-count">6</span></button>
+        <button class="tab" role="tab" data-panel="assets" aria-selected="false">资产与分级</button>
+        <button class="tab" role="tab" data-panel="egress" aria-selected="false">外送与处置<span class="count">4</span></button>
+      </div>
+
+      <!-- ============ 概览 ============ -->
+      <section class="panel" data-panel="overview">
+        <div class="hero">
+          <div class="hero-inner">
+            <div>
+              <h1>今天有 <span>2 条事件链</span> 需要人看一眼</h1>
+              <p>AI 代你执行了 47 次操作，其中 3 次被拦下、11 次被合并进 2 条事件链。其余为常规读写，已归档。</p>
+              <div class="hero-actions">
+                <button class="btn btn-primary" onclick="go('incidents')">查看事件链<svg><use href="#i-arrow-right"/></svg></button>
+                <button class="btn btn-outline" onclick="toast('已生成脱敏摘要，含 6 条事件、0 处正文内容')"><svg><use href="#i-download"/></svg>导出摘要</button>
+              </div>
+            </div>
+            <div class="hero-facts">
+              <div class="fact"><b>47</b><span>AI 操作</span></div>
+              <div class="fact"><b class="danger">3</b><span>执行前拦截</span></div>
+              <div class="fact"><b class="warn">11→2</b><span>告警合并</span></div>
+              <div class="fact"><b class="ok">96%</b><span>证据链完整</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="evidence">
+          <button class="ev" onclick="go('incidents')">
+            <div class="ev-top">
+              <div class="ev-ico" style="background:var(--danger-soft);color:var(--danger)"><svg><use href="#i-ban"/></svg></div>
+              <span class="tag tag-danger">critical 1</span>
+            </div>
+            <b>1</b><span>高危事件链</span>
+            <i>凭据读取 + 首次外连</i>
+          </button>
+          <button class="ev" onclick="go('incidents')">
+            <div class="ev-top">
+              <div class="ev-ico" style="background:var(--warn-soft);color:var(--warn)"><svg><use href="#i-alert"/></svg></div>
+              <span class="tag tag-warn">high 1</span>
+            </div>
+            <b>1</b><span>中危事件链</span>
+            <i>云资源销毁尝试</i>
+          </button>
+          <button class="ev" onclick="go('incidents')">
+            <div class="ev-top">
+              <div class="ev-ico" style="background:var(--info-soft);color:var(--info)"><svg><use href="#i-cloud"/></svg></div>
+              <span class="tag tag-info">4 条</span>
+            </div>
+            <b>4</b><span>已归档会话</span>
+            <i>合并后低于告警线</i>
+          </button>
+          <button class="ev" onclick="go('assets')">
+            <div class="ev-top">
+              <div class="ev-ico" style="background:var(--l4-soft);color:var(--l4)"><svg><use href="#i-lock"/></svg></div>
+              <span class="tag tag-neutral">L4</span>
+            </div>
+            <b>23</b><span>L4 资源被触及</span>
+            <i>全部已记录命中规则</i>
+          </button>
+          <button class="ev" onclick="go('egress')">
+            <div class="ev-top">
+              <div class="ev-ico" style="background:var(--ok-soft);color:var(--ok)"><svg><use href="#i-check"/></svg></div>
+              <span class="tag tag-ok">同步正常</span>
+            </div>
+            <b>38ms</b><span>上次外送延迟</span>
+            <i>队列 0 · 丢弃 0</i>
+          </button>
+        </div>
+
+        <div class="split" style="margin-top:14px">
+          <div class="card">
+            <div class="card-pad" style="padding-bottom:10px">
+              <div class="card-head" style="margin-bottom:8px">
+                <div>
+                  <h2>近 7 天：操作量与拦截量</h2>
+                  <p>拦截量维持在低位，说明规则前置生效，而不是事后告警</p>
+                </div>
+              </div>
+              <div id="chart7"></div>
+            </div>
+            <div style="border-top:1px solid var(--line)" class="card-pad">
+              <div class="card-head">
+                <div><h2>数据级别分布</h2><p>按被触及的资源最高级别统计</p></div>
+              </div>
+              <div class="bar-row"><span class="lvl lvl-L4">L4</span><div class="bar-track"><i class="bar-fill" style="width:22%;background:var(--l4)"></i></div><span class="num">23</span></div>
+              <div class="bar-row"><span class="lvl lvl-L3">L3</span><div class="bar-track"><i class="bar-fill" style="width:41%;background:var(--l3)"></i></div><span class="num">42</span></div>
+              <div class="bar-row"><span class="lvl lvl-L2">L2</span><div class="bar-track"><i class="bar-fill" style="width:68%;background:var(--l2)"></i></div><span class="num">70</span></div>
+              <div class="bar-row"><span class="lvl lvl-L1">L1</span><div class="bar-track"><i class="bar-fill" style="width:100%;background:var(--l1)"></i></div><span class="num">103</span></div>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="card card-pad">
+              <div class="card-head"><div><h2>Agent 接入</h2><p>执行前钩子已生效</p></div><span class="tag tag-ok">5 / 5</span></div>
+              <div class="agent-row">
+                <div class="agent-ico"><svg><use href="#i-terminal"/></svg></div>
+                <div class="agent-main"><b>Codex CLI</b><span>今日 19 次 · 拦截 1</span><div class="meter"><i style="width:82%;background:var(--brand)"></i></div></div>
+              </div>
+              <div class="agent-row">
+                <div class="agent-ico"><svg><use href="#i-terminal"/></svg></div>
+                <div class="agent-main"><b>Claude Code</b><span>今日 14 次 · 拦截 1</span><div class="meter"><i style="width:64%;background:var(--brand)"></i></div></div>
+              </div>
+              <div class="agent-row">
+                <div class="agent-ico"><svg><use href="#i-terminal"/></svg></div>
+                <div class="agent-main"><b>OpenCode</b><span>今日 7 次 · 拦截 1</span><div class="meter"><i style="width:32%;background:var(--brand)"></i></div></div>
+              </div>
+              <div class="agent-row">
+                <div class="agent-ico"><svg><use href="#i-terminal"/></svg></div>
+                <div class="agent-main"><b>ZCode</b><span>今日 5 次 · 拦截 0</span><div class="meter"><i style="width:23%;background:var(--brand)"></i></div></div>
+              </div>
+              <div class="agent-row">
+                <div class="agent-ico"><svg><use href="#i-terminal"/></svg></div>
+                <div class="agent-main"><b>DeepSeek Harness</b><span>今日 2 次 · 拦截 0</span><div class="meter"><i style="width:9%;background:var(--brand)"></i></div></div>
+              </div>
+            </div>
+            <div class="card card-pad">
+              <div class="card-head"><div><h2>链完整性</h2><p>SHA-256 逐条链接</p></div></div>
+              <div class="status-row"><div class="st-ico ok"><svg><use href="#i-check"/></svg></div><div class="st-main"><b>校验通过</b><span>238 条记录 · 末条 21:48:02</span></div></div>
+              <div class="status-row"><div class="st-ico info"><svg><use href="#i-link"/></svg></div><div class="st-main"><b>链头已随批次上报</b><span>a41f…9c2e · 平台侧已确认</span></div></div>
+              <div class="note" style="margin-top:12px">
+                <svg><use href="#i-info"/></svg>
+                <div>链完整只证明<strong>本地这段没被动过</strong>，不证明平台侧未被修改。两侧都需要校验。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 事件链 ============ -->
+      <section class="panel" data-panel="incidents" hidden>
+        <div class="page-head">
+          <div>
+            <h1>事件链</h1>
+            <p class="page-desc">11 条原始告警按「同一设备 + 同一 Agent + 同一会话」在 15 分钟窗口内合并为 6 条事件。左侧按级别排序，右侧是合并后的完整时间轴。</p>
+          </div>
+          <div class="head-actions">
+            <button class="btn btn-outline btn-sm" onclick="toast('已切换到「原始告警」视图：11 条，未合并')"><svg><use href="#i-layers"/></svg>原始告警 11</button>
+          </div>
+        </div>
+
+        <div class="split-wide">
+          <div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+              <button class="chip is-on" data-f="all">全部 <span class="n">6</span></button>
+              <button class="chip" data-f="critical"><svg style="width:11px;height:11px"><use href="#i-alert"/></svg>critical <span class="n">1</span></button>
+              <button class="chip" data-f="high">high <span class="n">1</span></button>
+              <button class="chip" data-f="medium">medium <span class="n">2</span></button>
+              <button class="chip" data-f="low">low <span class="n">2</span></button>
+            </div>
+            <div class="inc-list" id="incList"></div>
+          </div>
+
+          <div class="card" id="detailCard" style="position:sticky;top:74px">
+            <div class="detail-empty" id="detailEmpty">
+              <svg><use href="#i-activity"/></svg>
+              <div>从左侧选择一条事件链查看完整时间轴与处置动作</div>
+            </div>
+            <div id="detailBody" hidden></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 资产与分级 ============ -->
+      <section class="panel" data-panel="assets" hidden>
+        <div class="page-head">
+          <div>
+            <h1>资产与分级</h1>
+            <p class="page-desc">本地完成判定，只把「级别 + 命中规则 + 加盐哈希」出端。明文路径不出机器，平台侧靠 salt 做等值关联。</p>
+          </div>
+        </div>
+
+        <div class="grid" style="grid-template-columns:minmax(0,1.4fr) minmax(300px,1fr)">
+          <div class="card table-card">
+            <div class="card-pad" style="padding-bottom:8px">
+              <div class="card-head" style="margin-bottom:0">
+                <div><h2>被 AI 触及的资产</h2><p>今日，按级别降序</p></div>
+                <span class="tag tag-neutral">共 238 次</span>
+              </div>
+            </div>
+            <table>
+              <thead><tr><th>资源</th><th>类型</th><th>级别</th><th>命中</th><th>次数</th></tr></thead>
+              <tbody>
+                <tr><td><b>.env.production</b><br /><span class="faint mono">8f3a…c91d</span></td><td>文件</td><td><span class="lvl lvl-L4">L4</span></td><td><span class="tag tag-danger">api_key</span></td><td>6</td></tr>
+                <tr><td><b>prod-db / orders</b><br /><span class="faint mono">2b71…4e08</span></td><td>数据库表</td><td><span class="lvl lvl-L4">L4</span></td><td><span class="tag tag-danger">手机号 · 地址</span></td><td>3</td></tr>
+                <tr><td><b>aws:rds:prod-orders</b><br /><span class="faint mono">c4d9…7a12</span></td><td>云资源</td><td><span class="lvl lvl-L4">L4</span></td><td><span class="tag tag-danger">生产环境</span></td><td>2</td></tr>
+                <tr><td><b>config/credentials.json</b><br /><span class="faint mono">7e2c…b08f</span></td><td>文件</td><td><span class="lvl lvl-L4">L4</span></td><td><span class="tag tag-danger">private_key</span></td><td>1</td></tr>
+                <tr><td><b>客户名单-2026Q3.xlsx</b><br /><span class="faint mono">93af…2d55</span></td><td>文件</td><td><span class="lvl lvl-L3">L3</span></td><td><span class="tag tag-warn">姓名 · 邮箱</span></td><td>8</td></tr>
+                <tr><td><b>docs/架构评审.md</b><br /><span class="faint mono">1c8b…9f34</span></td><td>文件</td><td><span class="lvl lvl-L2">L2</span></td><td><span class="tag tag-neutral">内部</span></td><td>24</td></tr>
+                <tr><td><b>src/api/client.ts</b><br /><span class="faint mono">5a20…e7c6</span></td><td>文件</td><td><span class="lvl lvl-L1">L1</span></td><td><span class="tag tag-neutral">公开</span></td><td>61</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="grid">
+            <div class="card card-pad">
+              <div class="card-head"><div><h2>分级规则来源</h2><p>终端不自己造标准</p></div></div>
+              <div class="status-row"><div class="st-ico ok"><svg><use href="#i-check"/></svg></div><div class="st-main"><b>平台规则包</b><span>v2026.11.03 · 已同步 · 142 条</span></div></div>
+              <div class="status-row"><div class="st-ico ok"><svg><use href="#i-check"/></svg></div><div class="st-main"><b>路径规则</b><span>复用现有凭据与受保护路径集合</span></div></div>
+              <div class="status-row"><div class="st-ico info"><svg><use href="#i-eye"/></svg></div><div class="st-main"><b>内容规则</b><span>凭据正则 + 身份证 / 银行卡 / 手机号</span></div></div>
+              <div class="note" style="margin-top:12px">
+                <svg><use href="#i-info"/></svg>
+                <div>终端只执行判定、上报结论。规则由平台下发，避免两侧结论打架。</div>
+              </div>
+            </div>
+
+            <div class="card card-pad">
+              <div class="card-head"><div><h2>MCP 与 Skill</h2><p>AI 的"插件"是新的攻击面</p></div></div>
+              <div class="status-row"><div class="st-ico warn"><svg><use href="#i-plug"/></svg></div><div class="st-main"><b>mcp-server-fetch</b><span>新增于 10:03 · 首次出现在本机</span></div><span class="tag tag-warn">新增</span></div>
+              <div class="status-row"><div class="st-ico ok"><svg><use href="#i-plug"/></svg></div><div class="st-main"><b>mcp-server-postgres</b><span>已批准 · 只读 · 3 天前</span></div><span class="tag tag-ok">正常</span></div>
+              <div class="status-row"><div class="st-ico warn"><svg><use href="#i-file"/></svg></div><div class="st-main"><b>skill: pdf-toolkit 1.4.0</b><span>新增外部下载地址 · 未执行</span></div><span class="tag tag-warn">待确认</span></div>
+              <div class="status-row"><div class="st-ico ok"><svg><use href="#i-file"/></svg></div><div class="st-main"><b>skill: repo-summary 2.1.0</b><span>纯本地 · 无外部地址</span></div><span class="tag tag-ok">正常</span></div>
+              <div class="note warn" style="margin-top:12px">
+                <svg><use href="#i-alert"/></svg>
+                <div>新增 MCP 本身不是风险，但"读密钥 + 新增 MCP + 首次外连"组合起来才是。单点看都正常。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <div class="card-pad">
+            <div class="card-head">
+              <div><h2>本机模型服务暴露面</h2><p>本地推理服务常被默认监听 0.0.0.0，且无鉴权</p></div>
+              <span class="tag tag-warn">2 项待处理</span>
+            </div>
+            <div class="status-row"><div class="st-ico warn"><svg><use href="#i-globe"/></svg></div><div class="st-main"><b>Ollama 监听 0.0.0.0:11434</b><span>未启用鉴权 · 局域网可直连 · 建议改 127.0.0.1</span></div><span class="tag tag-warn">仅记录</span></div>
+            <div class="status-row"><div class="st-ico warn"><svg><use href="#i-globe"/></svg></div><div class="st-main"><b>LM Studio Server 监听 0.0.0.0:1234</b><span>未启用 API Key · 建议限制来源网段</span></div><span class="tag tag-warn">仅记录</span></div>
+            <div class="status-row"><div class="st-ico ok"><svg><use href="#i-lock"/></svg></div><div class="st-main"><b>本地向量库 127.0.0.1:6333</b><span>仅回环 · 正常</span></div><span class="tag tag-ok">正常</span></div>
+            <div class="note" style="margin-top:12px">
+              <svg><use href="#i-info"/></svg>
+              <div>这类服务我们只做<strong>发现与提示</strong>，不做自动改配置。改监听地址可能中断用户正在跑的模型。</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 外送与处置 ============ -->
+      <section class="panel" data-panel="egress" hidden>
+        <div class="page-head">
+          <div>
+            <h1>外送与处置</h1>
+            <p class="page-desc">单向出站，终端主动推送；处置动作由终端轮询拉取。企业网内不做反向连接——终端不监听端口。</p>
+          </div>
+          <div class="head-actions">
+            <button class="btn btn-outline btn-sm" onclick="toast('已发起连通性测试：写入测试事件 → 平台侧确认收到 → 延迟 38ms')"><svg><use href="#i-plug"/></svg>测试连通</button>
+          </div>
+        </div>
+
+        <div class="grid" style="grid-template-columns:minmax(0,1.15fr) minmax(320px,1fr)">
+          <div class="card">
+            <div class="card-pad" style="border-bottom:1px solid var(--line)">
+              <div class="card-head" style="margin-bottom:0">
+                <div><h2>外送通道</h2><p>默认关闭；未采购时不影响本地功能</p></div>
+                <div class="switch" role="switch" aria-checked="true" tabindex="0" data-toggle="egress" aria-label="外送开关"></div>
+              </div>
+            </div>
+            <div class="rule">
+              <div>
+                <div class="rule-title"><h3>目标形态</h3><span class="tag tag-brand">NDJSON 目录</span></div>
+                <div class="rule-cond"><span class="k">target</span> = <span class="v">file</span> · <span class="k">path</span> = <span class="v">~/Library/AppSupport/nl/egress/</span><br /><span class="k">consumer</span> = <span class="v">Filebeat / Fluent Bit</span></div>
+                <div class="rule-meta"><span>备选：<b>Syslog RFC5424 over TLS</b></span><span><b>HTTPS</b> 批量 100 条 / 5 秒</span></div>
+              </div>
+              <div class="rule-side"><span class="tag tag-ok">已连接</span></div>
+            </div>
+            <div class="rule">
+              <div>
+                <div class="rule-title"><h3>批量与背压</h3><span class="tag tag-neutral">不阻塞钩子</span></div>
+                <div class="rule-cond"><span class="k">batch</span> = <span class="v">100 条 / 5 秒</span><br /><span class="k">buffer</span> = <span class="v">200 MB 上限</span> · <span class="k">overflow</span> = <span class="v">丢最旧 + 记丢弃数</span></div>
+                <div class="rule-meta"><span>当前队列 <b>0</b></span><span>累计丢弃 <b>0</b></span><span>重试 <b>3 次退避</b></span></div>
+              </div>
+              <div class="rule-side"><span class="tag tag-ok">正常</span></div>
+            </div>
+            <div class="rule">
+              <div>
+                <div class="rule-title"><h3>字段白名单</h3><span class="tag tag-neutral">默认只出元数据</span></div>
+                <div class="rule-cond" style="line-height:1.9">
+                  <span class="k">✓</span> decision · ruleId · classification.level · destination.host<br />
+                  <span class="k">✓</span> resource.kind · resource.idHash · chainValid<br />
+                  <span class="op">✗</span> command（命令全文）· file content（文件内容）
+                </div>
+                <div class="rule-meta"><span>开启正文需 <b>单独审批</b></span><span>当前：<b>已关闭</b></span></div>
+              </div>
+              <div class="rule-side"><span class="tag tag-warn">保守</span></div>
+            </div>
+            <div class="rule">
+              <div>
+                <div class="rule-title"><h3>采样与去重</h3><span class="tag tag-neutral">高危全量</span></div>
+                <div class="rule-cond"><span class="k">critical/high</span> = <span class="v">100%</span> · <span class="k">medium</span> = <span class="v">100%</span> · <span class="k">low</span> = <span class="v">20%</span><br /><span class="k">dedupe</span> = <span class="v">by event.id</span>（重试不产生重复告警）</div>
+              </div>
+              <div class="rule-side"><span class="tag tag-ok">已配置</span></div>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="card card-pad">
+              <div class="card-head"><div><h2>同步状态</h2><p>最近 24 小时</p></div></div>
+              <div class="status-row"><div class="st-ico ok"><svg><use href="#i-check"/></svg></div><div class="st-main"><b>上次成功</b><span>21:48:07 · 延迟 38ms · 12 条</span></div></div>
+              <div class="status-row"><div class="st-ico ok"><svg><use href="#i-link"/></svg></div><div class="st-main"><b>链头已上报</b><span>a41f…9c2e · 平台侧回执已确认</span></div></div>
+              <div class="status-row"><div class="st-ico info"><svg><use href="#i-cloud"/></svg></div><div class="st-main"><b>今日累计</b><span>238 条 / 约 41 KB（平均 172 字节）</span></div></div>
+              <div class="status-row"><div class="st-ico ok"><svg><use href="#i-ban"/></svg></div><div class="st-main"><b>正文外送</b><span>0 次</span></div></div>
+              <div class="note" style="margin-top:12px">
+                <svg><use href="#i-info"/></svg>
+                <div>平均单条 172 字节，是因为只带结构字段与哈希。全量上报命令全文会让体积涨 20 倍以上。</div>
+              </div>
+            </div>
+
+            <div class="card card-pad">
+              <div class="card-head"><div><h2>处置动作</h2><p>平台下发 → 终端执行 → 回执</p></div><span class="tag tag-neutral">拉取 5 分钟</span></div>
+              <div id="actions"></div>
+              <div class="note warn" style="margin-top:12px">
+                <svg><use href="#i-alert"/></svg>
+                <div>任何自动处置都必须有<strong>一键误报</strong>。没有误报通道的自动化，在企业里活不过一个月。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <div class="card-pad" style="border-bottom:1px solid var(--line)">
+            <div class="card-head" style="margin-bottom:0">
+              <div><h2>新增拦截规则</h2><p>现有 8 条不动，只做增量；每条配 3 个用例（正例 / 反例 / 边界）</p></div>
+              <span class="tag tag-brand">4 条待启用</span>
+            </div>
+          </div>
+          <div class="rule">
+            <div>
+              <div class="rule-title"><h3>基础设施销毁</h3><span class="tag tag-danger">high</span><span class="mono faint">infra_destroy</span></div>
+              <div class="rule-cond"><span class="k">command</span> <span class="op">matches</span> <span class="v">terraform destroy | terraform apply -auto-approve | pulumi destroy</span> → <span class="op">deny</span></div>
+              <div class="rule-meta"><span>依据：<b>terraform 清空生产数据事故</b></span><span>放行条件：<b>terraform plan</b></span></div>
+            </div>
+            <div class="rule-side"><div class="switch" role="switch" aria-checked="true" tabindex="0" data-toggle="r1" aria-label="基础设施销毁规则"></div></div>
+          </div>
+          <div class="rule">
+            <div>
+              <div class="rule-title"><h3>数据库清空</h3><span class="tag tag-danger">high</span><span class="mono faint">db_destroy</span></div>
+              <div class="rule-cond"><span class="k">command</span> <span class="op">matches</span> <span class="v">DROP DATABASE|TABLE · TRUNCATE · DELETE FROM 无 WHERE · FLUSHALL</span> → <span class="op">deny</span></div>
+              <div class="rule-meta"><span>边界：<b>DELETE FROM t WHERE id=1 放行</b></span><span>需 SQL 感知，不能纯正则</span></div>
+            </div>
+            <div class="rule-side"><div class="switch" role="switch" aria-checked="true" tabindex="0" data-toggle="r2" aria-label="数据库清空规则"></div></div>
+          </div>
+          <div class="rule">
+            <div>
+              <div class="rule-title"><h3>云资源删除</h3><span class="tag tag-danger">high</span><span class="mono faint">cloud_delete</span></div>
+              <div class="rule-cond"><span class="k">command</span> <span class="op">matches</span> <span class="v">kubectl delete · aws * delete-* · gcloud * delete · aliyun * Delete*</span> → <span class="op">ask</span></div>
+              <div class="rule-meta"><span>不做 deny：<b>删测试资源是正常操作</b></span><span>ask 需附资源标识与影响范围</span></div>
+            </div>
+            <div class="rule-side"><div class="switch" role="switch" aria-checked="false" tabindex="0" data-toggle="r3" aria-label="云资源删除规则"></div></div>
+          </div>
+          <div class="rule">
+            <div>
+              <div class="rule-title"><h3>生产环境写操作</h3><span class="tag tag-warn">medium</span><span class="mono faint">prod_write</span></div>
+              <div class="rule-cond"><span class="k">isWrite</span>(op) <span class="op">AND</span> <span class="k">path|command</span> <span class="op">contains</span> <span class="v">prod | production | --env=prod</span> → <span class="op">ask</span></div>
+              <div class="rule-meta"><span>两个条件必须同时成立</span><span>误报率较高，建议先观察 2 周</span></div>
+            </div>
+            <div class="rule-side"><div class="switch" role="switch" aria-checked="false" tabindex="0" data-toggle="r4" aria-label="生产环境写操作规则"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="note" style="margin-top:18px">
+        <svg><use href="#i-info"/></svg>
+        <div><strong>原型说明</strong>：本页所有数字、事件、资产均为演示数据，不对应任何真实机器。原型不读写本地配置，不连接任何服务。方案文档见 <span class="mono">docs/plans/A方向-AI行为接入安全平台-实施方案.md</span>。</div>
+      </div>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------------- 演示数据（全部为构造数据，不对应真实机器） ---------------- */
+const INCIDENTS = [
+  {
+    id: "inc_20261111_1002_a41f",
+    sev: "critical", sevLabel: "critical", tone: "danger",
+    title: "读取生产密钥后新增 MCP 并首次外连",
+    sub: "Claude Code · 会话 3f2a… · 项目 networktool",
+    level: "L4", rule: "credential_read + 新增 MCP + 首次外连",
+    tools: "Claude Code", count: 4, dur: "3 分 12 秒",
+    why: "4 条原始告警在 <b>15 分钟窗口</b>内来自同一设备、同一 Agent、同一会话，跨 <b>2 类资源</b>（文件 → 网络）且含 L4 读取与首次外连，命中 R2 + R3。",
+    steps: [
+      { t: "10:02", tone: "danger", title: "读取 .env.production", body: "resource: file · <code>.env.production</code> · 级别 <b>L4</b> · 命中 api_key", tag: "deny 已拦截", tagTone: "danger" },
+      { t: "10:03", tone: "warn", title: "新增 MCP server: fetch", body: "resource: mcp_server · 首次出现在本机 · 配置写入 <code>~/.claude/mcp.json</code>", tag: "allow 仅记录", tagTone: "neutral" },
+      { t: "10:05", tone: "danger", title: "尝试连接 api.cdn-relay.example", body: "destination: <code>api.cdn-relay.example</code> · <b>基线外首次出现</b> · 不在已知服务商名单", tag: "deny 已拦截", tagTone: "danger" },
+      { t: "10:05", tone: "info", title: "事件链闭合", body: "合并为 1 条 critical。定级依据：L4 读取 + deny + 首次外连", tag: "已生成事件", tagTone: "info" }
+    ],
+    facts: [["设备", "macbook-pro-14 / 8f2c…"], ["用户", "zhulu1（本机登录态）"], ["项目", "networktool"], ["会话", "3f2a9c…"], ["窗口", "10:02:11 – 10:05:23"], ["链状态", "valid（已随批次上报）"]],
+    actions: ["rotate_credential", "disable_mcp", "notify_owner", "false_positive"]
+  },
+  {
+    id: "inc_20261111_0931_b7c2",
+    sev: "high", sevLabel: "high", tone: "warn",
+    title: "terraform destroy 指向生产工作区，已拦截",
+    sub: "Codex CLI · 会话 9d41… · 项目 infra-terraform",
+    level: "L4", rule: "infra_destroy（新增）",
+    tools: "Codex CLI", count: 2, dur: "38 秒",
+    why: "2 条告警同会话，出现 L4 资源（生产工作区）+ deny，命中 R3 + R4。原 8 条规则覆盖不到此类操作。",
+    steps: [
+      { t: "09:31", tone: "warn", title: "读取 terraform.tfstate", body: "resource: file · <code>env/prod/terraform.tfstate</code> · 级别 <b>L4</b>（含云凭证）", tag: "allow 仅记录", tagTone: "neutral" },
+      { t: "09:31", tone: "danger", title: "terraform destroy -auto-approve", body: "命中新增规则 <code>infra_destroy</code> · 目标工作区 <code>env/prod</code>", tag: "deny 已拦截", tagTone: "danger" }
+    ],
+    facts: [["设备", "macbook-pro-14 / 8f2c…"], ["用户", "zhulu1"], ["项目", "infra-terraform"], ["会话", "9d41e8…"], ["窗口", "09:31:04 – 09:31:42"], ["链状态", "valid"]],
+    actions: ["notify_owner", "revoke_exception", "false_positive"]
+  },
+  {
+    id: "inc_20261111_0845_c9f1",
+    sev: "medium", sevLabel: "medium", tone: "info",
+    title: "批量遍历 14 个项目的配置文件",
+    sub: "OpenCode · 会话 5b7e… · 跨项目",
+    level: "L3", rule: "行为基线偏离（新项目数）",
+    tools: "OpenCode", count: 3, dur: "6 分 40 秒",
+    why: "单会话内触及 14 个不同项目，超出该用户基线（P50 = 2，P95 = 4）。命中 R1 + 基线偏离。",
+    steps: [
+      { t: "08:45", tone: "info", title: "跨项目读取开始", body: "10 分钟内触及 <b>14</b> 个项目目录 · 用户基线 P95 = 4", tag: "allow 仅记录", tagTone: "neutral" },
+      { t: "08:49", tone: "warn", title: "触及 3 个 L3 文件", body: "客户名单、合同模板等 · 内容规则命中姓名与邮箱", tag: "allow 仅记录", tagTone: "neutral" },
+      { t: "08:51", tone: "info", title: "合并为 1 条 medium", body: "无出站行为，未升级为 high", tag: "已生成事件", tagTone: "info" }
+    ],
+    facts: [["设备", "macbook-pro-14 / 8f2c…"], ["用户", "zhulu1"], ["项目", "跨 14 个项目"], ["会话", "5b7e21…"], ["窗口", "08:45:10 – 08:51:50"], ["链状态", "valid"]],
+    actions: ["notify_owner", "false_positive"]
+  },
+  {
+    id: "inc_20261110_2214_d3a8",
+    sev: "medium", sevLabel: "medium", tone: "warn",
+    title: "夜间会话触发 3 次提权尝试",
+    sub: "ZCode · 会话 1c8d… · 项目 ops-scripts",
+    level: "L3", rule: "privilege × 3",
+    tools: "ZCode", count: 3, dur: "1 分 05 秒",
+    why: "非工作时段（22:14）+ 同会话 3 次提权拒绝，命中 R1 + 夜间基线偏离（该用户夜间占比基线 < 2%）。",
+    steps: [
+      { t: "22:14", tone: "warn", title: "sudo 尝试，已拦截", body: "命中现有规则 <code>privilege</code> · 第 1 次", tag: "deny 已拦截", tagTone: "danger" },
+      { t: "22:14", tone: "warn", title: "chmod 777，已拦截", body: "命中 <code>privilege</code> · 第 2 次", tag: "deny 已拦截", tagTone: "danger" },
+      { t: "22:15", tone: "warn", title: "再次 sudo，已拦截", body: "命中 <code>privilege</code> · 第 3 次 · 会话终止", tag: "deny 已拦截", tagTone: "danger" }
+    ],
+    facts: [["设备", "macbook-pro-14 / 8f2c…"], ["用户", "zhulu1"], ["项目", "ops-scripts"], ["会话", "1c8d7f…"], ["窗口", "22:14:02 – 22:15:07"], ["链状态", "valid"]],
+    actions: ["notify_owner", "isolate_session", "false_positive"]
+  },
+  {
+    id: "inc_20261110_1603_e5b4",
+    sev: "low", sevLabel: "low", tone: "ok",
+    title: "Skill 版本更新含新增下载地址",
+    sub: "Skill 中心 · 未执行 · 等待确认",
+    level: "L2", rule: "供应链规则 S3",
+    tools: "Skill 中心", count: 2, dur: "instant",
+    why: "静态比对发现新增外部地址，未执行任何脚本。仅记录，等待人工处置。",
+    steps: [
+      { t: "16:03", tone: "warn", title: "pdf-toolkit 1.3.0 → 1.4.0", body: "新增 <code>curl … | tar</code> 与 <code>bash install.sh --silent</code>，+18 / −2 行", tag: "待确认", tagTone: "warn" },
+      { t: "16:03", tone: "info", title: "未导入，未执行", body: "仅做静态文件比对，没有运行任何脚本", tag: "仅记录", tagTone: "neutral" }
+    ],
+    facts: [["来源", "~/skills/pdf-toolkit（本地目录）"], ["新增地址", "files.example-cdn.net"], ["变更规模", "+18 / −2 行，3 个文件"], ["执行结果", "未导入"], ["局限", "静态证据无法证明脚本行为"], ["链状态", "valid"]],
+    actions: ["notify_owner", "false_positive"]
+  },
+  {
+    id: "inc_20261110_1412_f7c6",
+    sev: "low", sevLabel: "low", tone: "ok",
+    title: "历史会话含疑似密钥，已脱敏",
+    sub: "任务接续 · 1 处命中 · 展示层已替换",
+    level: "L4", rule: "凭据检测 C1",
+    tools: "任务接续", count: 1, dur: "instant",
+    why: "单条告警，无关联出站行为，未升级。但 L4 命中需通知负责人在来源端轮换。",
+    steps: [
+      { t: "14:12", tone: "warn", title: "会话输出中命中疑似 API Key", body: "形如 <code>sk-…</code>（长度 48）· 展示与导出时替换为 <code>[已脱敏]</code>", tag: "已脱敏", tagTone: "ok" }
+    ],
+    facts: [["命中数量", "1 处"], ["展示处理", "已替换为 [已脱敏]"], ["建议", "在来源端轮换该密钥"], ["局限", "无法确认该密钥是否仍然有效"], ["链状态", "valid"]],
+    actions: ["rotate_credential", "false_positive"]
+  }
+];
+
+/* ---------------- 工具函数 ---------------- */
+const LEVEL_CLS = { L1: "lvl-L1", L2: "lvl-L2", L3: "lvl-L3", L4: "lvl-L4" };
+const SEV_COLOR = { critical: "var(--danger)", high: "var(--warn)", medium: "var(--info)", low: "var(--ok)" };
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("is-on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("is-on"), 2600);
+}
+const ACTIONS = {
+  rotate_credential: ["轮换密钥", "通知负责人在来源系统轮换该凭据"],
+  disable_mcp: ["停用 MCP", "从配置移除 mcp-server-fetch"],
+  revoke_exception: ["撤销例外", "清空该项目的规则例外，立即恢复生效"],
+  isolate_session: ["隔离会话", "该会话后续操作全部转 ask"],
+  notify_owner: ["通知负责人", "推送事件摘要到企业微信"],
+  false_positive: ["标记误报", "回传平台用于调整阈值"]
+};
+
+/* ---------------- 事件列表 ---------------- */
+function renderList(filter) {
+  const box = document.getElementById("incList");
+  const list = filter === "all" ? INCIDENTS : INCIDENTS.filter(i => i.sev === filter);
+  box.innerHTML = list.map(i => `
+    <button class="inc" data-id="${i.id}">
+      <div class="inc-top">
+        <i class="sev" style="background:${SEV_COLOR[i.sev]}"></i>
+        <span class="tag ${i.sev === "critical" ? "tag-danger" : i.sev === "high" ? "tag-warn" : i.sev === "medium" ? "tag-info" : "tag-ok"}">${i.sev}</span>
+        <span class="inc-title">${i.title}</span>
+      </div>
+      <div class="inc-sub">${i.sub}</div>
+      <div class="chain-mini">
+        ${i.steps.slice(0, 3).map((s, idx) => `
+          <span class="step ${s.tone === "danger" ? "danger" : s.tone === "warn" ? "warn" : ""}">${s.t.split(" ")[0]} ${s.title.length > 12 ? s.title.slice(0, 12) + "…" : s.title}</span>
+          ${idx < Math.min(i.steps.length, 3) - 1 ? '<span class="arr">→</span>' : ""}
+        `).join("")}
+      </div>
+      <div class="inc-meta">
+        <span class="lvl ${LEVEL_CLS[i.level]}">${i.level}</span>
+        <span class="tag tag-neutral">${i.count} 条原始告警</span>
+        <span class="tag tag-outline">${i.tools}</span>
+        <span class="small faint">${i.dur}</span>
+      </div>
+    </button>
+  `).join("");
+  box.querySelectorAll(".inc").forEach(btn => {
+    btn.addEventListener("click", () => selectIncident(btn.dataset.id));
+  });
+  document.getElementById("tab-inc-count").textContent = INCIDENTS.length;
+}
+
+function selectIncident(id) {
+  const inc = INCIDENTS.find(i => i.id === id);
+  if (!inc) return;
+  document.querySelectorAll(".inc").forEach(b => b.classList.toggle("is-active", b.dataset.id === id));
+  document.getElementById("detailEmpty").hidden = true;
+  const body = document.getElementById("detailBody");
+  body.hidden = false;
+  body.innerHTML = `
+    <div class="card-pad" style="border-bottom:1px solid var(--line)">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+        <span class="tag ${inc.sev === "critical" ? "tag-danger" : inc.sev === "high" ? "tag-warn" : inc.sev === "medium" ? "tag-info" : "tag-ok"}">${inc.sev}</span>
+        <span class="lvl ${LEVEL_CLS[inc.level]}">${inc.level}</span>
+        <span class="tag tag-neutral">${inc.rule}</span>
+      </div>
+      <h2 style="font-size:15px;line-height:1.45">${inc.title}</h2>
+      <p class="small muted" style="margin-top:4px">${inc.sub}</p>
+    </div>
+    <div class="card-pad">
+      <div class="dsec">
+        <h4>为什么合并成一条</h4>
+        <div class="merge-reason">${inc.why}</div>
+      </div>
+      <div class="dsec">
+        <h4>时间轴</h4>
+        <div class="vtl">
+          ${inc.steps.map(s => `
+            <div class="vtl-item" data-tone="${s.tone}">
+              <div class="vtl-time">${s.t}</div>
+              <div class="vtl-rail"><i class="vtl-node"></i></div>
+              <div class="vtl-card">
+                <div class="vtl-head">${s.title} <span class="tag ${s.tagTone === "danger" ? "tag-danger" : s.tagTone === "warn" ? "tag-warn" : s.tagTone === "ok" ? "tag-ok" : s.tagTone === "info" ? "tag-info" : "tag-neutral"}">${s.tag}</span></div>
+                <div class="vtl-body">${s.body}</div>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+      <div class="dsec">
+        <h4>事件属性</h4>
+        <dl class="kv">
+          ${inc.facts.map(f => `<dt>${f[0]}</dt><dd>${f[1]}</dd>`).join("")}
+          <dt>事件 ID</dt><dd class="mono">${inc.id}</dd>
+        </dl>
+      </div>
+      <div class="dsec">
+        <h4>处置</h4>
+        <div class="act-grid" id="actGrid">
+          ${inc.actions.map(a => `
+            <button class="act" data-act="${a}">
+              <svg><use href="#${a === "false_positive" ? "i-flag" : a === "notify_owner" ? "i-user" : a === "disable_mcp" ? "i-plug" : a === "rotate_credential" ? "i-key" : a === "isolate_session" ? "i-ban" : "i-refresh"}"/></svg>
+              <div><b>${ACTIONS[a][0]}</b><span>${ACTIONS[a][1]}</span></div>
+            </button>
+          `).join("")}
+        </div>
+        <div class="note" style="margin-top:10px">
+          <svg><use href="#i-info"/></svg>
+          <div>动作下发后，终端在 <b>5 分钟内</b>轮询拉取并执行，回执写回 <code>receipt</code> 字段。终端离线时动作最长挂起 24 小时。</div>
+        </div>
+      </div>
+    </div>
+  `;
+  body.querySelectorAll(".act").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (btn.classList.contains("done")) return;
+      btn.classList.add("done");
+      btn.querySelector("span").textContent = "已下发 · 等待回执";
+      toast(`已下发「${ACTIONS[btn.dataset.act][0]}」· 事件 ${inc.id.slice(0, 18)}…`);
+    });
+  });
+}
+
+/* ---------------- 7 天图表（手写 SVG） ---------------- */
+function renderChart() {
+  const days = ["11-05", "11-06", "11-07", "11-08", "11-09", "11-10", "11-11"];
+  const ops = [31, 44, 28, 52, 39, 61, 47];
+  const blocks = [2, 5, 1, 4, 2, 6, 3];
+  const maxOps = Math.max(...ops);
+  const maxBlocks = Math.max(...blocks);
+  const W = 620, H = 140, PL = 10, PR = 34, PB = 24, PT = 10;
+  const innerH = H - PB - PT;
+  const slot = (W - PL - PR) / days.length;
+  let bars = "", labels = "", dots = "", line = "";
+  days.forEach((d, i) => {
+    const cx = PL + slot * i + slot / 2;
+    const h = (ops[i] / maxOps) * innerH;
+    const w = Math.min(slot * 0.5, 34);
+    bars += `<rect x="${cx - w / 2}" y="${H - PB - h}" width="${w}" height="${h}" rx="3" fill="#dfeaeb"/>`;
+    const bH = (blocks[i] / maxBlocks) * innerH;
+    const by = H - PB - bH;
+    dots += `<circle cx="${cx}" cy="${by}" r="3" fill="#fff" stroke="#b64848" stroke-width="1.7"/>`;
+    line += (i === 0 ? `M${cx},${by}` : ` L${cx},${by}`);
+    labels += `<text x="${cx}" y="${H - 7}" text-anchor="middle" font-size="10" fill="#93a0ad">${d}</text>`;
+  });
+  document.getElementById("chart7").innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img" aria-label="近 7 天 AI 操作量与拦截数">
+      <line x1="${PL}" y1="${H - PB}" x2="${W - PR}" y2="${H - PB}" stroke="#e8edf3" stroke-width="1"/>
+      ${bars}
+      <path d="${line}" fill="none" stroke="#b64848" stroke-width="1.5" stroke-dasharray="3 3" opacity="0.7"/>
+      ${dots}
+      ${labels}
+      <text x="${W - PR + 6}" y="${PT + 4}" font-size="9.5" fill="#b64848">拦截</text>
+      <text x="${PL}" y="${PT + 2}" font-size="9.5" fill="#b8c4cf">操作量</text>
+    </svg>
+    <div style="display:flex;gap:16px;margin-top:6px;font-size:11.5px;color:var(--muted);flex-wrap:wrap">
+      <span style="display:flex;align-items:center;gap:5px"><i style="width:9px;height:9px;border-radius:2px;background:#dfeaeb"></i>AI 操作量（左轴）</span>
+      <span style="display:flex;align-items:center;gap:5px"><i style="width:7px;height:7px;border-radius:50%;border:1.7px solid #b64848;display:inline-block"></i>执行前拦截数（独立刻度）</span>
+    </div>
+  `;
+}
+
+/* ---------------- 处置动作面板（外送页） ---------------- */
+function renderActions() {
+  const items = [
+    ["notify_owner", "向事件负责人推送摘要", "已执行", "ok"],
+    ["revoke_exception", "撤销 networktool 的项目例外", "已执行 · 回执已确认", "ok"],
+    ["disable_mcp", "停用 mcp-server-fetch", "等待终端拉取", "warn"],
+    ["rotate_credential", "轮换 .env.production 中的密钥", "需人工在来源系统执行", "info"]
+  ];
+  document.getElementById("actions").innerHTML = items.map(([k, desc, state, tone]) => `
+    <div class="status-row">
+      <div class="st-ico ${tone}"><svg><use href="#${tone === "ok" ? "i-check" : tone === "warn" ? "i-clock" : "i-info"}"/></svg></div>
+      <div class="st-main"><b>${ACTIONS[k][0]}</b><span>${desc}</span></div>
+      <span class="tag tag-${tone === "ok" ? "ok" : tone === "warn" ? "warn" : "info"}">${state}</span>
+    </div>
+  `).join("");
+}
+
+/* ---------------- 页签与导航 ---------------- */
+const CRUMBS = { overview: "概览", incidents: "事件链", assets: "资产与分级", egress: "外送与处置" };
+function go(panel) {
+  document.querySelectorAll(".tab").forEach(t => {
+    const on = t.dataset.panel === panel;
+    t.classList.toggle("is-active", on);
+    t.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  document.querySelectorAll(".panel").forEach(p => {
+    p.hidden = p.dataset.panel !== panel;
+  });
+  document.getElementById("crumb-current").textContent = CRUMBS[panel] || "概览";
+  document.querySelectorAll(".nav-sub").forEach(n => n.classList.toggle("is-active", n.dataset.jump === panel));
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+/* ---------------- 事件绑定 ---------------- */
+document.querySelectorAll(".tab").forEach(t => {
+  t.addEventListener("click", () => go(t.dataset.panel));
+});
+document.querySelectorAll(".nav-sub").forEach(n => {
+  n.addEventListener("click", () => go(n.dataset.jump));
+});
+document.querySelectorAll(".chip[data-f]").forEach(c => {
+  c.addEventListener("click", () => {
+    document.querySelectorAll(".chip[data-f]").forEach(x => x.classList.remove("is-on"));
+    c.classList.add("is-on");
+    renderList(c.dataset.f);
+  });
+});
+/* 开关：仅内存状态，不写 localStorage，不改任何真实配置 */
+document.querySelectorAll(".switch[data-toggle]").forEach(sw => {
+  const flip = () => {
+    const on = sw.getAttribute("aria-checked") === "true";
+    sw.setAttribute("aria-checked", on ? "false" : "true");
+    const name = sw.dataset.toggle;
+    toast(on ? `已关闭 ${labelOf(name)}（原型仅切换显示）` : `已开启 ${labelOf(name)}（原型仅切换显示）`);
+  };
+  sw.addEventListener("click", flip);
+  sw.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
+});
+function labelOf(k) {
+  return ({ egress: "外送通道", r1: "基础设施销毁规则", r2: "数据库清空规则", r3: "云资源删除规则", r4: "生产环境写操作规则" })[k] || k;
+}
+
+renderList("all");
+renderChart();
+renderActions();
+selectIncident(INCIDENTS[0].id);
+go("overview");
+</script>
+</body>
+</html>

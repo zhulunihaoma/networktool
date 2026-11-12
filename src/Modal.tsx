@@ -8,6 +8,7 @@ export default function Modal({
   onClose,
   wide = false,
   drawer = false,
+  drawerSide = "right",
 }: {
   title: string;
   subtitle?: string;
@@ -15,6 +16,7 @@ export default function Modal({
   onClose: () => void;
   wide?: boolean;
   drawer?: boolean;
+  drawerSide?: "left" | "right";
 }) {
   const root = useRef<HTMLElement>(null),
     close = useRef(onClose);
@@ -64,7 +66,7 @@ export default function Modal({
   }, []);
   const content = (
     <div
-      className={`modal-backdrop ${drawer ? "drawer-backdrop" : ""}`}
+      className={`modal-backdrop ${drawer ? `drawer-backdrop drawer-${drawerSide}` : ""}`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -75,7 +77,7 @@ export default function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`modal ${wide ? "wide" : ""} ${drawer ? "tool-drawer" : ""}`}
+        className={`modal ${wide ? "wide" : ""} ${drawer ? `tool-drawer drawer-${drawerSide}` : ""}`}
       >
         <header>
           <div>

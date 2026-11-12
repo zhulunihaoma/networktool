@@ -38,6 +38,7 @@ import type {
 import TriagePanel from "./TriagePanel";
 import type { ToolInstall } from "./shared/assistant";
 import { suggestedEndpoints, suggestedTriageTarget } from "./shared/tool-network";
+import CommonNetworkIssues from "./CommonNetworkIssues";
 import { autoProviderScan } from "./shared/auto-provider-scan";
 
 const KIND_GROUPS: {
@@ -72,7 +73,7 @@ export default function ProvidersBoard({
   onError,
   onAdvanced,
   tool,
-  triageRequested = false,
+  triageRequest = 0,
   onClearTool,
   onBack,
 }: {
@@ -80,14 +81,43 @@ export default function ProvidersBoard({
   onError: (text: string) => void;
   onAdvanced: () => void;
   tool?: ToolInstall;
-  triageRequested?: boolean;
+  triageRequest?: number;
   onClearTool: () => void;
   onBack: () => void;
 }) {
   const [providers, setProviders] = useState<ProviderScan>();
   const [scan, setScan] = useState<PlatformScan>();
   const [copied, setCopied] = useState<string>();
-  const [triageOpen, setTriageOpen] = useState(triageRequested ? 1 : 0);
+  const [triageOpen, setTriageOpen] = useState(0);
+  const openTriage = () => {
+    setTriageOpen((value) => value + 1);
+    requestAnimationFrame(() => {
+      const panel = document.getElementById("tool-triage");
+      panel?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "instant"
+          : "smooth",
+        block: "start",
+      });
+      panel
+        ?.querySelector<HTMLButtonElement>(".triage-toggle")
+        ?.focus({ preventScroll: true });
+    });
+  };
+  // This board stays mounted while other pages are shown, so a one-shot
+  // useState initial value can never react to a later request coming from the
+  // tool cards. React to the request and bring the panel into view: expanding
+  // something below the fold still looks like "the button did nothing".
+  useEffect(() => {
+    if (!triageRequest) return;
+    setTriageOpen((value) => value + 1);
+    const frame = requestAnimationFrame(() => {
+      document
+        .getElementById("tool-triage")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [triageRequest]);
   useEffect(() => {
     if (!copied) return;
     const timer = setTimeout(() => setCopied(undefined), 3000);
@@ -309,7 +339,7 @@ export default function ProvidersBoard({
               检查有异常？
               <button
                 className="text-button"
-                onClick={() => setTriageOpen((value) => value + 1)}
+                onClick={openTriage}
               >
                 按顺序排查网络与代理
               </button>
@@ -325,6 +355,7 @@ export default function ProvidersBoard({
           expandRequested={triageOpen}
         />
       </div>
+      <CommonNetworkIssues onTriage={openTriage} />
       {KIND_GROUPS.map((kind) => {
         const items = ALL_ENDPOINTS.filter((x) => x.endpoint.kind === kind.id);
         if (!items.length) return null;

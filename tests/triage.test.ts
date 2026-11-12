@@ -22,7 +22,7 @@ const defaults = (): TriageDependencies => ({
   processes: async () => [],
   connections: async () => ({ flows: [] }),
 });
-async function scan(overrides: Partial<TriageDependencies> = {}) {
+async function scan(overrides: Partial<TriageDependencies> = {}, target = "codex") {
   let resolve!: (run: TriageRun) => void;
   const completed = new Promise<TriageRun>((r) => {
     resolve = r;
@@ -30,7 +30,7 @@ async function scan(overrides: Partial<TriageDependencies> = {}) {
   const doctor = new TriageDoctor({ ...defaults(), ...overrides }, (run) => {
     if (run.status === "completed") resolve(run);
   });
-  doctor.start("codex");
+  doctor.start(target);
   return { doctor, run: await completed };
 }
 test("按依赖顺序检查；DIRECT 不认定未安装VPN；入口通过不证明持续会话正常", async () => {
@@ -153,7 +153,7 @@ test("给IT的排查结果没有内部网络签名或原始代理地址；恢复
 
 const paths = (): IPPathReport => {
   const report: IPPathReport = {
-    host: "codex-cloud-backend.chatgpt.com", checkedAt: Date.now(), networkKey: "private-key", accessNetworkKey: "hotspot",
+    host: "chatgpt.com", checkedAt: Date.now(), networkKey: "private-key", accessNetworkKey: "hotspot",
     hasPublicIPv6: true, networkChanged: false,
     service: { id: "wifi", name: "Wi-Fi", device: "en0", method: "Automatic" },
     attempts: [
@@ -165,9 +165,9 @@ const paths = (): IPPathReport => {
   return report;
 };
 
-test("Codex 补充检查真实服务域名，路径不一致提升为待处理，报告包含可恢复方案但不泄露网络签名", async () => {
+test("Codex 补充检查使用公开入口参考主机，路径不一致提升为待处理，报告包含可恢复方案但不泄露网络签名", async () => {
   const { doctor, run } = await scan({ ipPath: async (host) => {
-    assert.equal(host, "codex-cloud-backend.chatgpt.com"); return paths();
+    assert.equal(host, "chatgpt.com"); return paths();
   } });
   assert.equal(run.steps[3].status, "attention");
   assert.equal(run.priorityIds[0], "entry");
@@ -210,4 +210,117 @@ test("修复后同一热点保留原恢复方案；切回其他网络则拒绝�
   report.accessNetworkKey = "other-wifi";
   const other = await rerun();
   assert.match(other.comparison!, /不能把恢复归因于修复操作/);
+});
+
+test("DNS 返回回环或全零地址识别为劫持特征，不当作网络不通", async () => {
+  const { run } = await scan({
+    dns: async () => ({ v4: 1, v6: 0, sinkholed: true }),
+  });
+  assert.equal(run.steps[2].status, "attention");
+  assert.match(run.steps[2].summary, /回环或全零地址/);
+  assert.match(run.steps[2].evidence.join(""), /劫持/);
+  assert.ok(run.steps[2].actions.includes("network_settings"));
+});
+
+test("NXDOMAIN 与解析器超时给出不同结论，均不归因平台故障", async () => {
+  const notFound = new Error("getaddrinfo ENOTFOUND") as Error & {
+    code: string;
+  };
+  notFound.code = "ENOTFOUND";
+  const first = await scan({
+    dns: async () => {
+      throw notFound;
+    },
+  });
+  assert.match(first.run.steps[2].summary, /NXDOMAIN/);
+  const again = new Error("getaddrinfo EAI_AGAIN") as Error & {
+    code: string;
+  };
+  again.code = "EAI_AGAIN";
+  const second = await scan({
+    dns: async () => {
+      throw again;
+    },
+  });
+  assert.match(second.run.steps[2].summary, /暂时没有应答/);
+});
+
+test("系统路径成功而补充路径证书失败时，显式产出证书信任分歧结论", async () => {
+  const { run } = await scan({
+    probe: async (target) => ({
+      platformId: target.id,
+      status: "reachable",
+      summary: "入口响应",
+      suggestion: "在原工具确认",
+      evidence: [
+        {
+          id: "E-sys",
+          time: Date.now(),
+          stage: "http",
+          route: "system",
+          status: "success",
+          httpStatus: 200,
+          title: "系统路径已响应",
+          detail: "",
+          duration: 10,
+          executor: "diagnostic_probe",
+          source: "Chromium · system network",
+        },
+        {
+          id: "E-node",
+          time: Date.now(),
+          stage: "tls",
+          route: "direct",
+          status: "failed",
+          code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+          title: "补充路径证书失败",
+          detail: "",
+          duration: 10,
+          executor: "diagnostic_probe",
+          source: "node",
+        },
+      ],
+      runningApps: [],
+      route: "系统网络",
+      paths: [{ label: "系统路径", status: "accessible", httpStatus: 200 }],
+    }),
+  });
+  assert.equal(run.steps[3].status, "pass");
+  assert.match(run.steps[3].evidence.join(""), /证书信任分歧/);
+  assert.match(run.steps[3].suggestion, /企业根证书/);
+});
+
+test("系统 SOCKS5 且产品官方说明不支持 SOCKS 时降级为需确认并说明作用域", async () => {
+  const { run } = await scan(
+    {
+      proxy: async () => "SOCKS5 127.0.0.1:1080",
+    },
+    "claude",
+  );
+  assert.equal(run.steps[1].status, "unverified");
+  assert.match(run.steps[1].evidence.join(""), /不支持 SOCKS/);
+  assert.equal(run.guidance?.productId, "claude-code");
+});
+
+test("排查结果携带已核对的官方网络说明草案并进入 IT 报告", async () => {
+  const { run } = await scan();
+  assert.equal(run.guidance?.productId, "codex");
+  assert.match(triageText(run), /官方说明/);
+});
+
+test("服务状态入口只对已核实官方状态页的目标出现", async () => {
+  const busyProbe = async (target: Parameters<TriageDependencies["probe"]>[0]) => ({
+    platformId: target.id,
+    status: "busy" as const,
+    summary: "服务忙",
+    suggestion: "稍后再试",
+    evidence: [],
+    runningApps: [],
+    route: "系统网络",
+    paths: [{ label: "系统路径", status: "restricted" as const, httpStatus: 429 }],
+  });
+  const kimi = await scan({ probe: busyProbe }, "kimi");
+  assert.ok(!kimi.run.steps[3].actions.includes("service_status"));
+  const codex = await scan({ probe: busyProbe });
+  assert.ok(codex.run.steps[3].actions.includes("service_status"));
 });

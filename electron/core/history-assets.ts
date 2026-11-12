@@ -486,6 +486,19 @@ export class HistoryAssets implements JsonObserver {
             );
           c.file = matches[0];
           c.root = root;
+          // ZCode artifact caches may contain a data URI rather than raw
+          // image bytes. Decode it before hashing and packaging, just as the
+          // direct attachment reader does; the URI also gives the actual MIME.
+          for await (const chunk of fileChunks(c.file, root)) {
+            const header = chunk.subarray(0, 4096).toString("utf8");
+            if (header.startsWith("data:")) {
+              c.encoded = c.file;
+              c.encoding = "uri";
+              const mime = header.match(/^data:([^;,]+)/)?.[1];
+              if (mime) entry.mime = mime;
+            }
+            break;
+          }
         }
         if (!c.encoded && (!c.file || !c.root))
           throw new Error("附件缺少已验证的来源定位。");

@@ -80,7 +80,7 @@ export class CodexAppServer implements CodexReadClient {
     if (!["thread/list", "thread/read", "thread/turns/list"].includes(method)) return Promise.reject(new Error("仅允许只读 Codex 会话方法。"));
     return this.request(method, params);
   }
-  private request(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+  protected request(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
     if (this.closed) return Promise.reject(new Error("Codex 会话接口已关闭。"));
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {

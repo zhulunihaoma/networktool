@@ -301,7 +301,7 @@ export class ContextArchives {
       }),
     );
     const jobKey = createHash("sha256")
-        .update(JSON.stringify({ readerVersion: 1, task, revisions }))
+        .update(JSON.stringify({ readerVersion: 2, task, revisions }))
         .digest("hex"),
       jobs = path.join(this.root, "jobs");
     await fs.mkdir(jobs, { recursive: true, mode: 0o700 });
@@ -436,8 +436,30 @@ export class ContextArchives {
       if (!payload || !pks.length) {
         for (const r of db
           .prepare(`SELECT * FROM ${identifier(table)} WHERE ${where}`)
-          .iterate(...values))
+          .iterate(...values)) {
           await record(table, r);
+          // Older stores can have JSON payload columns without a primary
+          // key. Preserve their original row verbatim while also inspecting
+          // the decoded payload for explicit attachment records.
+          if (payload && typeof r[payload] === "string") {
+            const encoded = Buffer.from(r[payload] as string);
+            const syntax = new JsonStreamValidator();
+            try {
+              syntax.write(encoded);
+              syntax.end();
+            } catch {
+              const warning = `${table} 存在未解码的原始记录，附件尚不可核验。`;
+              if (!warnings.includes(warning)) warnings.push(warning);
+              continue;
+            }
+            const validator = new JsonStreamValidator(assets);
+            assets.input(`${table}:payload`);
+            validator.write(encoded);
+            validator.end();
+            await assets.flush();
+            bodies++;
+          }
+        }
         completed.add(unit);
         await checkpoint();
         return;

@@ -14,11 +14,15 @@ import {
   Sparkles,
   Trash2,
   RotateCcw,
+  ShieldAlert,
+  ShieldX,
   TriangleAlert,
   X,
 } from "lucide-react";
 import Modal from "./Modal";
+import SkillRiskText from "./SkillRiskText";
 import type { DesktopAPI } from "./shared/types";
+import { RISK_LEVEL_LABELS, RISK_RULES, type SkillRiskReport } from "./shared/security-scan";
 import type {
   SkillCopyPreview,
   SkillCopyResult,
@@ -39,6 +43,8 @@ import {
   type StorageLike,
 } from "./shared/source-order";
 import type { ToolUsage } from "./shared/tool-usage";
+import { SkillViewSwitch, SkillManagement, SkillEvidence, type SkillView } from "./SkillInsights";
+import { skillRiskLabel, skillRiskLevel } from "./shared/skill-insights";
 
 function browserStorage(): StorageLike | undefined {
   try {
@@ -67,20 +73,56 @@ function VerificationDetails({ value }: { value?: SkillVerification }) {
   </details>;
 }
 
-const STEPS = ["扫描本机", "选择 Skill", "确认操作", "查看结果"];
+type CopyWithAck = (ids: string[], target: string, token: string, autoConvert: boolean, riskAcknowledged?: boolean) => Promise<SkillCopyResult[]>;
+
+const RISK_COPY: Record<SkillRiskReport["level"], string> = {
+  high: "文件中出现下载执行、删除文件或访问凭据的高风险指令，请核对证据与用途后再安装。",
+  medium: "包含提权、未锁定版本的启动命令或可疑提示语，建议看一眼证据行。",
+  low: "只发现外部网址，未发现危险指令。",
+  none: "未发现危险指令或外部地址。",
+};
+
+/** 360 风格的安装前安全体检卡片：先给结论，再给证据。 */
+function RiskReport({ value }: { value?: SkillRiskReport }) {
+  if (!value) return <div className="skill-risk unknown"><ShieldAlert size={16} /><div><strong>安全检查未完成</strong><p>未能读取全部文件，请重新检查。</p></div></div>;
+  const Icon = value.level === "high" ? ShieldX : value.level === "medium" ? ShieldAlert : ShieldCheck;
+  const risky = value.findings.filter(item => item.level !== "low");
+  const shown = risky.slice(0, 8);
+  return <div className={`skill-risk ${value.level}`}>
+    <Icon size={18} />
+    <div>
+      <strong>安全检查：{RISK_LEVEL_LABELS[value.level]}</strong>
+      <p>{RISK_COPY[value.level]}{value.compared && value.changedCount ? ` 其中 ${value.changedCount} 处是本次更新新增的。` : ""}</p>
+      {shown.length > 0 && <ul className="skill-risk-lines" aria-label="风险证据">
+        {shown.map((item, index) => <li key={index} className={`${item.level}${item.changed ? " changed" : ""}`}>
+          <span className="skill-risk-tag">{item.label}{item.changed && <em>新增</em>}</span>
+          <code title={`${item.file}:${item.line}`}>{item.file}:{item.line}　<SkillRiskText text={item.text} /></code>
+          <small>{RISK_RULES[item.rule]?.advice}</small>
+        </li>)}
+      </ul>}
+      {risky.length > shown.length && <p>另有 {risky.length - shown.length} 条证据未展开。</p>}
+      {value.urls.length > 0 && <details><summary>会访问的外部地址（{value.urls.length}）</summary><ul>{value.urls.map(url => <li key={url}><code>{url}</code></li>)}</ul></details>}
+      {value.commands.length > 0 && <details><summary>涉及的启动或安装命令（{value.commands.length}）</summary><ul>{value.commands.map(cmd => <li key={cmd}><code>{cmd}</code></li>)}</ul></details>}
+      <p className="skill-risk-meta">已检查 {value.scannedFiles} 个文本文件{value.truncated ? "，部分文件超出大小或数量限额未检查" : ""}{value.compared ? "，已与目标中的旧版本逐行对比" : ""}。检查只读，不运行任何脚本。</p>
+    </div>
+  </div>;
+}
 
 function usageLabel(item: SkillItem) {
   if (item.usage?.status !== "observed-read" || !item.usage.lastObservedAt) return "使用情况未知";
   const days = Math.max(0, Math.floor((Date.now() - Date.parse(item.usage.lastObservedAt)) / 86_400_000));
-  return days === 0 ? "今天有读取记录" : `最近确认读取：${days} 天前`;
+  if (item.usage.confirmed === false) return `最近读取请求：${days} 天前（未确认成功）`;
+  return days === 0 ? "今天有确认读取记录" : `最近确认读取：${days} 天前`;
 }
 
 export default function SkillCenter({
   api,
   onError,
+  onSecurity,
 }: {
   api: DesktopAPI;
   onError: (message: string) => void;
+  onSecurity?: () => void;
 }) {
   const [scan, setScan] = useState<SkillScan>();
   const [selected, setSelected] = useState<string[]>([]);
@@ -92,7 +134,7 @@ export default function SkillCenter({
   const [draggingSource, setDraggingSource] = useState<string>();
   const [dragOverSource, setDragOverSource] = useState<string>();
   const draggingRef = useRef<string | undefined>(undefined);
-  const [cleanupOnly, setCleanupOnly] = useState(false);
+  const [view, setView] = useState<SkillView>('all');
   const [detail, setDetail] = useState<SkillItem>();
   const [copyOpen, setCopyOpen] = useState(false);
   const [target, setTarget] = useState("");
@@ -105,6 +147,7 @@ export default function SkillCenter({
   const [copyDetailsOpen, setCopyDetailsOpen] = useState(false);
   const [preview, setPreview] = useState<SkillCopyPreview>();
   const [previewError, setPreviewError] = useState<string>();
+  const [riskAck, setRiskAck] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteIds, setDeleteIds] = useState<string[]>([]);
   const [deletePreview, setDeletePreview] = useState<SkillDeletePreview>();
@@ -113,11 +156,24 @@ export default function SkillCenter({
   const [restoreMessage, setRestoreMessage] = useState<string>();
   const revision = useRef(0);
   const operation = useRef(false);
+  const setInsightBusy = (value: boolean) => { operation.current = value; setBusy(value); };
+  const acceptScan = (next: SkillScan) => {
+    invalidatePreview();
+    setScan(next);
+    setSelected(old => old.filter(id => next.items.some(item => item.id === id)));
+    setDetail(old => old ? next.items.find(item => item.id === old.id) : undefined);
+  };
   const [failure, setFailure] = useState<string>();
 
   // 旧运行实例可能没有注入 skills 能力，这里先行判断，避免把 TypeError 抛给用户。
   const canScan = typeof api.skills === "function";
   const items = scan?.items ?? [];
+  const sourceCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of items) counts.set(item.source, (counts.get(item.source) ?? 0) + 1);
+    counts.set(ALL_SOURCE, items.length);
+    return counts;
+  }, [items]);
   const discoveredSources = useMemo(
     () => Array.from(new Set(items.map((item) => item.source))),
     [items],
@@ -133,13 +189,11 @@ export default function SkillCenter({
           `${item.name} ${item.description} ${item.features.join(" ")}`.toLowerCase();
         return (
           (!query || text.includes(query.toLowerCase())) &&
-          (source === "全部" || item.source === source) &&
-          (!cleanupOnly || item.cleanup?.level === "cleanup")
+          (source === "全部" || item.source === source)
         );
       }),
-    [items, query, source, cleanupOnly],
+    [items, query, source],
   );
-  const cleanupCount = items.filter((item) => item.cleanup?.level === "cleanup").length;
   const selectedDeletableCount = items.filter((item) => selected.includes(item.id) && item.cleanup?.deletable).length;
   const copyStatusCounts = resultRows.reduce(
     (counts, row) => ({ ...counts, [row.status]: counts[row.status] + 1 }),
@@ -155,13 +209,13 @@ export default function SkillCenter({
   const detected = scan
     ? scan.targets.filter((tool) => tool.installed).length
     : 0;
-  const currentStep = copyOpen || deleteOpen ? 2 : result || deleteResults.length || restoreMessage ? 3 : scan ? 1 : 0;
   const selectedTarget = scan?.targets.find(option => option.id === target);
   const targetBlocked = selectedTarget?.copySupported === false;
   const copyableCount = preview?.target === target
     ? preview.items.filter((item) => item.status === "ready" || item.status === "update" || item.status === "convert").length
     : 0;
   const targetPreviewItems = preview?.target === target ? preview.items : undefined;
+  const riskAckNeeded = (preview?.target === target ? preview.riskAckCount ?? 0 : 0) > 0;
   const sameExistingCount = targetPreviewItems?.filter((item) =>
     item.status === "skipped" && item.verification?.checks.some((check) => check.label === "已有文件完整性"),
   ).length ?? 0;
@@ -195,6 +249,7 @@ export default function SkillCenter({
     revision.current += 1;
     setPreview(undefined);
     setPreviewError(undefined);
+    setRiskAck(false);
   }, []);
   const closeCopy = () => {
     if (operation.current) return;
@@ -215,10 +270,11 @@ export default function SkillCenter({
     setDeletePreview(undefined);
     setDeleteError(undefined);
   };
-  const openSingleCopy = (id: string) => {
+  const openSingleCopy = (id: string, targetId?: string) => {
     if (operation.current) return;
     invalidatePreview();
     setSelected([id]);
+    if (targetId) setTarget(targetId);
     setDetail(undefined);
     setCopyOpen(true);
   };
@@ -395,6 +451,7 @@ export default function SkillCenter({
       !preview ||
       targetBlocked ||
       preview.target !== target ||
+      (riskAckNeeded && !riskAck) ||
       !preview.items.some(
         (item) => item.status === "ready" || item.status === "update" || item.status === "convert",
       )
@@ -403,11 +460,13 @@ export default function SkillCenter({
     operation.current = true;
     setBusy(true);
     try {
-      const rows = await api.copySkills(
+      // 第 5 个参数 riskAcknowledged：主进程据此放行高风险 Skill；旧主进程忽略它并保持拒绝
+      const rows = await (api as unknown as { copySkills: CopyWithAck }).copySkills(
         selected,
         target,
         preview.token,
         false, // Legacy hosts must never perform the former lossy conversion.
+        riskAckNeeded && riskAck,
       );
       const copied = rows.filter((row) => row.status === "copied").length;
       const skipped = rows.filter((row) => row.status === "skipped").length;
@@ -423,6 +482,7 @@ export default function SkillCenter({
       invalidatePreview();
       setCopyOpen(false);
       setSelected([]);
+      try { setScan(await api.skills()); } catch (error) { onError(`复制已完成，但列表刷新失败：${(error as Error).message}`); }
     } catch (error) {
       invalidatePreview();
       setPreviewError((error as Error).message);
@@ -443,29 +503,15 @@ export default function SkillCenter({
     <div className="skill-center">
       <div className="page-heading">
         <div>
-          <div className="eyebrow">LOCAL SKILLS · INVENTORY</div>
           <h1>Skill 中心</h1>
           <p>
-            扫描本机 Skill，查看用途、复制到其他工具，或按依据清理本地副本。
+            扫描本机 Skill，整理重复安装、查看安全依据，并按使用记录清理本地副本。
           </p>
         </div>
         <span className="badge green">
           <ShieldCheck size={14} />
           扫描不执行脚本 · 清理可恢复
         </span>
-      </div>
-
-      <div className="skill-steps" aria-label="Skill 操作步骤">
-        {STEPS.map((label, index) => (
-          <div
-            key={label}
-            className={`skill-step ${index === currentStep ? "active" : index < currentStep ? "done" : ""}`}
-          >
-            <span>{index < currentStep ? <Check size={11} /> : index + 1}</span>
-            {label}
-            {index < STEPS.length - 1 && <ChevronRight size={13} />}
-          </div>
-        ))}
       </div>
 
       <section className="panel skill-list">
@@ -476,36 +522,14 @@ export default function SkillCenter({
               {scanning
                 ? "正在扫描本地主流工具的 Skill 目录…"
                 : scan
-                  ? `已发现 ${scan.items.length} 个 Skill · 已读取 ${scan.roots.length - blocked.length}/${scan.roots.length} 个目录 · ${detected} 个工具目录存在 · 当前 ${filtered.length} 条结果 · 点击名称查看功能摘要`
+                  ? `已发现 ${scan.items.length} 个 Skill · 已读取 ${scan.roots.length - blocked.length}/${scan.roots.length} 个目录 · ${detected} 个工具目录存在 · 当前 ${filtered.length} 条结果 · 已核对 ${new Set(items.flatMap(item => item.insight?.hash && !item.insight.checkError ? [item.insight.hash] : [])).size} 个内容版本 · 点击名称查看功能摘要`
                   : "本次未读到本机 Skill"}
             </p>
           </div>
-          <div className="skill-actions">
-            {resultRows.length > 0 && <button className="skill-copy-history" type="button" onClick={() => setCopyDetailsOpen(true)}><ClipboardCheck size={14} />最近复制（{resultRows.length}）</button>}
-            <button
-              className="text-button"
-              onClick={selectAll}
-              disabled={busy || !filtered.length}
-            >
-              {allVisibleSelected ? "取消当前结果选择" : "全选当前结果"}
-            </button>
-            <button
-              className="primary"
-              onClick={() => {
-                invalidatePreview();
-                setCopyOpen(true);
-              }}
-              disabled={busy || !selected.length}
-            >
-              <ClipboardCheck size={15} />
-              复制（{selected.length}）{selected.some(id => !filtered.some(item => item.id === id)) && <small> · 含筛选外 {selected.filter(id => !filtered.some(item => item.id === id)).length} 项</small>}
-            </button>
-            <button className="skill-batch-delete" type="button" disabled={busy || !selectedDeletableCount} onClick={() => openDelete(selected)}>
-              <Trash2 size={15} />
-              移入回收区（{selectedDeletableCount}）
-            </button>
-          </div>
+
         </div>
+
+        <SkillViewSwitch view={view} items={filtered} disabled={busy} onChange={setView}/>
 
         <div className="skill-toolbar">
           <div className="search-field">
@@ -519,10 +543,14 @@ export default function SkillCenter({
           <div className="segmented" role="tablist" aria-label="按来源筛选 Skill">
             {sources.map((value) => {
               const draggable = value !== ALL_SOURCE;
+              const count = sourceCounts.get(value) ?? 0;
               return (
                 <button
                   key={value}
+                  type="button"
+                  disabled={busy}
                   role="tab"
+                  aria-label={scan ? `${value}，${count} 个 Skill` : value}
                   aria-selected={source === value}
                   className={[
                     source === value ? "active" : "",
@@ -562,14 +590,13 @@ export default function SkillCenter({
                     setDragOverSource(undefined);
                   }}
                 >
-                  {value}
+                  <span>{value}</span>
+                  <span className="skill-source-count" aria-hidden="true">{scan ? count : "—"}</span>
                 </button>
               );
             })}
           </div>
-          <button className={`skill-cleanup-filter ${cleanupOnly ? "active" : ""}`} type="button" onClick={() => setCleanupOnly((old) => !old)} aria-pressed={cleanupOnly}>
-            建议清理 <span>{cleanupCount}</span>
-          </button>
+
           <button
             className="secondary"
             onClick={() => void runScan()}
@@ -584,6 +611,32 @@ export default function SkillCenter({
           </button>
         </div>
 
+          {view === 'all' && <div className="skill-actions" role="group" aria-label="批量管理 Skill">
+            {resultRows.length > 0 && <button className="skill-copy-history" type="button" onClick={() => setCopyDetailsOpen(true)}><ClipboardCheck size={14} />最近复制（{resultRows.length}）</button>}
+            <button
+              className="text-button"
+              onClick={selectAll}
+              disabled={busy || !filtered.length}
+            >
+              {allVisibleSelected ? "取消当前结果选择" : "全选当前结果"}
+            </button>
+            <button
+              className="primary"
+              onClick={() => {
+                invalidatePreview();
+                setCopyOpen(true);
+              }}
+              disabled={busy || !selected.length}
+            >
+              <ClipboardCheck size={15} />
+              复制（{selected.length}）{selected.some(id => !filtered.some(item => item.id === id)) && <small> · 含筛选外 {selected.filter(id => !filtered.some(item => item.id === id)).length} 项</small>}
+            </button>
+            <button className="skill-batch-delete" type="button" disabled={busy || !selectedDeletableCount} onClick={() => openDelete(selected)}>
+              <Trash2 size={15} />
+              移入回收区（{selectedDeletableCount}）
+            </button>
+          </div>}
+
         {deleteResults.length > 0 && <div className="skill-results skill-notice" role="status">
           <div className="notice green"><CheckCircle2 size={15} /><div>本次清理结果：{deleteResults.filter(row => row.status === "trashed").length} 项已移入回收区。可在下方恢复。</div></div>
           {deleteResults.map(row => <div className="skill-transfer-row" key={row.id}>
@@ -594,6 +647,7 @@ export default function SkillCenter({
         </div>}
         {restoreMessage && <div className="notice green skill-notice" role="status"><RotateCcw size={15} /><div>{restoreMessage}</div></div>}
         {scan?.trashError && <div className="notice amber skill-notice"><TriangleAlert size={15} /><div>回收区暂时无法读取：{scan.trashError}</div></div>}
+        {scan?.catalogError && <div className="notice amber skill-notice" role="alert"><TriangleAlert size={15}/><div>观察记录未能保存：{scan.catalogError}。本次不生成低频清理建议，请修复后重新扫描。</div></div>}
 
         {blocked.length > 0 && !failure && (
           <div className="notice amber skill-notice">
@@ -633,6 +687,8 @@ export default function SkillCenter({
               </button>
             </div>
           </div>
+        ) : view !== 'all' && scan ? (
+          <SkillManagement view={view} items={filtered} scan={scan} api={api} busy={busy} onBusy={setInsightBusy} onScan={acceptScan} onInspect={setDetail} onCopy={openSingleCopy} onDelete={openDelete} onSecurity={onSecurity}/>
         ) : !filtered.length ? (
           <div className="skill-state">
             <div className="empty">
@@ -643,9 +699,9 @@ export default function SkillCenter({
                   <FolderSearch size={22} />
                 )}
               </div>
-              <h3>{cleanupOnly ? "暂无建议清理的 Skill" : items.length ? "没有匹配的 Skill" : "未发现本机 Skill"}</h3>
+              <h3>{items.length ? "没有匹配的 Skill" : "未发现本机 Skill"}</h3>
               <p>
-                {cleanupOnly ? "可关闭“建议清理”筛选，查看所有 Skill 及逐项依据。" : items.length
+                {items.length
                   ? "换个关键词或切换来源；也可以重新扫描获取最新目录。"
                   : "主流工具与共享目录中暂未发现 SKILL.md，安装 Skill 后可重新扫描。"}
               </p>
@@ -694,6 +750,7 @@ export default function SkillCenter({
                   <small>{item.scope}</small>
                 </div>
                 <div className="skill-status">
+                  <span className={`skill-safety-label ${skillRiskLevel(item)}`}>{skillRiskLabel(item)}{item.insight?.preserved ? ' · 已保留' : ''}</span>
                   <span className={`skill-advice-tag ${item.cleanup?.level ?? "unknown"}`} title={item.cleanup?.reasons.join("；")}>
                     {item.cleanup?.title ?? "依据待检查"}
                   </span>
@@ -799,6 +856,7 @@ export default function SkillCenter({
               <p>{usageLabel(detail)}。{detail.usage?.evidence}</p>
               {detail.usage?.lastObservedAt && <p>记录时间：{new Date(detail.usage.lastObservedAt).toLocaleString()}</p>}
             </div>
+            <SkillEvidence item={detail} api={api} onScan={acceptScan} onBusy={setInsightBusy} busy={busy} onSecurity={onSecurity ? () => { setDetail(undefined); onSecurity(); } : undefined}/>
             {(() => {
               // 免责声明已由上面的"摘要依据"行与列表脚注表达；抽屉里只保留该 Skill 特有的提醒
               const specific = detail.warnings.filter(
@@ -969,6 +1027,7 @@ export default function SkillCenter({
                       </span>
                     </div>
                     {item.reason && <p>{item.reason}</p>}
+                    <RiskReport value={item.risk} />
                     {item.changes.length > 0 && (
                       <ul aria-label="自动处理摘要">
                         {item.changes.map((change, index) => (
@@ -989,6 +1048,7 @@ export default function SkillCenter({
                     <VerificationDetails value={item.verification} />
                   </div>
                 ))}
+                {riskAckNeeded && <label className="skill-risk-confirm"><input type="checkbox" checked={riskAck} onChange={event => setRiskAck(event.target.checked)} /> 我已了解风险，仍要安装</label>}
               </div>
             )}
           </div>
@@ -1014,6 +1074,7 @@ export default function SkillCenter({
               disabled={
                 busy ||
                 targetBlocked ||
+                (riskAckNeeded && !riskAck) ||
                 !copyableCount
               }
               onClick={() => void doCopy()}

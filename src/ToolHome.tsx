@@ -10,11 +10,13 @@ export default function ToolHome({
   onFiles,
   onToolDiagnosis,
   onProviders,
+  onTriage,
 }: {
   api: DesktopAPI;
   onError: (text: string) => void;
   onFiles: () => void;
   onProviders: (tool?: ToolInstall) => void;
+  onTriage: (tool: ToolInstall) => void;
   onToolDiagnosis: (
     tool: ToolInstall,
     componentId: string,
@@ -86,6 +88,7 @@ export default function ToolHome({
         onFiles={onFiles}
         onDiagnose={onToolDiagnosis}
         onProviders={onProviders}
+        onTriage={onTriage}
       />
       <div className="tool-scope">
         <Info size={16} />

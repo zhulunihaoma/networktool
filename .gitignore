@@ -8,3 +8,7 @@ test-results/
 .DS_Store
 .wiscode/
 .codegraph/
+artifacts/
+outputs/
+work/
+.zcode/

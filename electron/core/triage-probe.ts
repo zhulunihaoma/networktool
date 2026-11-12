@@ -58,9 +58,17 @@ export function bounded<T>(
 export async function lookupEntrance(host: string, signal: AbortSignal) {
   const answers = await bounded(dns.lookup(host, { all: true }), signal);
   if (!answers.length) throw new Error("无可用地址");
+  const addresses = answers.map((a) => a.address);
+  // 0.0.0.0 / loopback answers are the classic hosts-file, security-software
+  // or resolver-pollution signature — the name "resolves", but not to the
+  // platform. Reported as evidence, never auto-repaired.
+  const sinkholed = addresses.some(
+    (a) => a === "0.0.0.0" || a === "::" || a.startsWith("127."),
+  );
   return {
     v4: answers.filter((a) => a.family === 4).length,
     v6: answers.filter((a) => a.family === 6).length,
+    sinkholed,
   };
 }
 export async function inspectProxyEndpoint(input: string, signal: AbortSignal) {

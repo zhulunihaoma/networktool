@@ -8,6 +8,66 @@ import type {
 } from "../src/shared/types";
 import type { AppUpdateState } from "../src/shared/app-update";
 const api: DesktopAPI = {
+  security: {
+    securityTrustCodex: () => ipcRenderer.invoke("security-trust-codex"),
+    securityOverview: () => ipcRenderer.invoke("security-overview"),
+    securityTimeline: (filter) =>
+      ipcRenderer.invoke("security-timeline", filter),
+    securityDoctor: () => ipcRenderer.invoke("security-doctor"),
+    securityLastDoctor: () => ipcRenderer.invoke("security-last-doctor"),
+    securityForwardSettings: () =>
+      ipcRenderer.invoke("security-forward-settings"),
+    securitySaveForwardSettings: (settings) =>
+      ipcRenderer.invoke("security-forward-save", settings),
+    securityForwardStats: () => ipcRenderer.invoke("security-forward-stats"),
+    securityForwardNow: () => ipcRenderer.invoke("security-forward-now"),
+    securityForwardExport: () => ipcRenderer.invoke("security-forward-export"),
+    securityIgnoreFinding: (id, ignored) =>
+      ipcRenderer.invoke("security-ignore", id, ignored),
+    securityRevealFinding: (id) =>
+      ipcRenderer.invoke("security-reveal-finding", id),
+    securityInventory: (rebaseline) =>
+      ipcRenderer.invoke("security-inventory", rebaseline),
+    securityPreview: (kind, target) =>
+      ipcRenderer.invoke("security-preview", kind, target),
+    securityApply: (token) => ipcRenderer.invoke("security-apply", token),
+    securitySelfCheck: (tool) =>
+      ipcRenderer.invoke("security-self-check", tool),
+    securitySetAutoProtect: (enabled) =>
+      ipcRenderer.invoke("security-auto-protect", enabled),
+    securityRunAutoProtect: () =>
+      ipcRenderer.invoke("security-run-auto-protect"),
+    securityChooseProject: () => ipcRenderer.invoke("security-choose-project"),
+    securityCheckMcp: (text) => ipcRenderer.invoke("security-check-mcp", text),
+    securityCopyMcp: (text) => ipcRenderer.invoke("security-copy-mcp", text),
+    securitySavePolicy: (policy) =>
+      ipcRenderer.invoke("security-save-policy", policy),
+    securityAddException: (id) =>
+      ipcRenderer.invoke("security-add-exception", id),
+    securityRemoveException: (rule, project) =>
+      ipcRenderer.invoke("security-remove-exception", rule, project),
+    securityRetroScan: () => ipcRenderer.invoke("security-retro-scan"),
+    securityIncidents: (filter) =>
+      ipcRenderer.invoke("security-incidents", filter),
+    securityChains: (filter) => ipcRenderer.invoke("security-chains", filter),
+    securityExport: (format) => ipcRenderer.invoke("security-export", format),
+    onSecurity: (callback) => {
+      const listener = (
+        _event: unknown,
+        value: import("../src/shared/security").SecurityEvent,
+      ) => callback(value);
+      ipcRenderer.on("security-event", listener);
+      return () => ipcRenderer.removeListener("security-event", listener);
+    },
+    onSecurityProgress: (callback) => {
+      const listener = (
+        _event: unknown,
+        value: import("../src/shared/security").SecurityProgress,
+      ) => callback(value);
+      ipcRenderer.on("security-progress", listener);
+      return () => ipcRenderer.removeListener("security-progress", listener);
+    },
+  },
   appUpdate: () => ipcRenderer.invoke("app-update-state"),
   setAppUpdateSource: (source) => ipcRenderer.invoke("app-update-source", source),
   checkAppUpdate: () => ipcRenderer.invoke("app-update-check"),
@@ -39,9 +99,26 @@ const api: DesktopAPI = {
   exportHandoffPackage: (token) => ipcRenderer.invoke("handoff-export", token),
   copyHandoff: (token) => ipcRenderer.invoke("handoff-copy", token),
   skills: () => ipcRenderer.invoke("skills"),
-  previewSkills: (ids, target) => ipcRenderer.invoke("preview-skills", ids, target),
-  copySkills: (ids, target, token, autoConvert) => ipcRenderer.invoke("copy-skills", ids, target, token, autoConvert),
-  previewDeleteSkills: (ids) => ipcRenderer.invoke("preview-delete-skills", ids),
+  skillPreference: (id, kind, value) => ipcRenderer.invoke("skill-preference", id, kind, value),
+  compareSkills: (left, right) => ipcRenderer.invoke("compare-skills", left, right),
+  previewMergeSkills: (keepId, ids) => ipcRenderer.invoke("preview-merge-skills", keepId, ids),
+  mergeSkills: (keepId, ids, token) => ipcRenderer.invoke("merge-skills", keepId, ids, token),
+  skillTidy: () => ipcRenderer.invoke("skill-tidy"),
+  applySkillTidy: (ids, token) => ipcRenderer.invoke("apply-skill-tidy", ids, token),
+  revertSkillMove: (id) => ipcRenderer.invoke("revert-skill-move", id),
+  previewSkills: (ids, target) =>
+    ipcRenderer.invoke("preview-skills", ids, target),
+  copySkills: (ids, target, token, autoConvert, riskAcknowledged) =>
+    ipcRenderer.invoke(
+      "copy-skills",
+      ids,
+      target,
+      token,
+      autoConvert,
+      riskAcknowledged,
+    ),
+  previewDeleteSkills: (ids) =>
+    ipcRenderer.invoke("preview-delete-skills", ids),
   deleteSkills: (ids, token) => ipcRenderer.invoke("delete-skills", ids, token),
   restoreSkill: (id) => ipcRenderer.invoke("restore-skill", id),
   tools: () => ipcRenderer.invoke("tools"),
@@ -50,6 +127,17 @@ const api: DesktopAPI = {
   pinTool: (id, pinned) => ipcRenderer.invoke("pin-tool", id, pinned),
   chooseToolPath: (productId) =>
     ipcRenderer.invoke("choose-tool-path", productId),
+  trialFilePolicy: (scope, draft, expected) => ipcRenderer.invoke("trial-file-policy", scope, draft, expected),
+  publishFilePolicy: id => ipcRenderer.invoke("publish-file-policy", id),
+  rollbackFilePolicy: (scope, resource, expected) => ipcRenderer.invoke("rollback-file-policy", scope, resource, expected),
+  reconfirmFileCandidate: (scope,resource) => ipcRenderer.invoke("reconfirm-file-candidate",scope,resource),
+  reviewFileCandidate: (scope, resource, deferred) => ipcRenderer.invoke("review-file-candidate", scope, resource, deferred),
+  startFileTask: (scope, resource, kind) => ipcRenderer.invoke("start-file-task", scope, resource, kind),
+  grantFileTask: (task, reason) => ipcRenderer.invoke("grant-file-task", task, reason),
+  runFileTask: task => ipcRenderer.invoke("run-file-task", task),
+  revokeFileGrant: id => ipcRenderer.invoke("revoke-file-grant", id),
+  exportFileTaskCopy: (task, digest) => ipcRenderer.invoke("export-file-task-copy", task, digest),
+  retryFileDeployment: () => ipcRenderer.invoke("retry-file-deployment"),
   fileWorkspace: () => ipcRenderer.invoke("file-workspace"),
   chooseFileScope: () => ipcRenderer.invoke("choose-file-scope"),
   cancelFileScan: () => ipcRenderer.invoke("cancel-file-scan"),

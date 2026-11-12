@@ -61,14 +61,17 @@ try {
   const converted = await fs.readFile(path.join(destination, "grill-me/SKILL.md"), "utf8");
   assert.equal(converted, sources["grill-me"]);
   assert.equal(await fs.readFile(path.join(destination, "grill-me/agents/openai.yaml"), "utf8"), sidecar);
+  await page.getByRole("button", { name: "查看完整结果", exact: false }).click();
+  await page.locator(".skill-verification > summary").click();
   await expect(page.getByText("完整性：通过", { exact: true })).toBeVisible();
   await expect(page.getByText("实际运行：未验证", { exact: true })).toBeVisible();
   if (process.env.NETWORK_LENS_SKILL_SHOTS_DIR) await page.screenshot({ path: path.join(process.env.NETWORK_LENS_SKILL_SHOTS_DIR, "skill-copy-results.png") });
+  await page.getByRole("dialog").getByRole("button", { name: "关闭", exact: true }).click();
 
   // Mixed batch: direct + convert count together; existing and blocked skip.
   await page.getByRole("button", { name: "重新扫描", exact: true }).click();
   await expect(page.getByRole("button", { name: "重新扫描", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "WisCode", exact: true }).click();
+  await page.getByRole("tab", { name: /^WisCode/ }).click();
   await page.getByRole("button", { name: "全选当前结果", exact: true }).click();
   await page.getByRole("button", { name: "复制（4）", exact: true }).click();
   await expect(dialog.getByRole("button", { name: "确认复制（2）", exact: true })).toBeEnabled();
@@ -90,17 +93,20 @@ try {
   await expect(dialog.locator(".skill-target-presence").getByText(/已有 1 项同名 Skill，内容不同/)).toBeVisible();
   await expect(dialog.getByText(/目标内容与源不同/).first()).toBeVisible();
   await dialog.getByRole("button", { name: "确认复制（1）", exact: true }).click();
+  await page.getByRole("button", { name: "查看完整结果", exact: false }).click();
   await expect(page.getByText(/旧版已备份到/)).toBeVisible();
-  const updateRow = page.locator(".skill-results .skill-transfer-row").filter({ hasText: "direct" }).last();
+  const updateRow = page.locator(".skill-copy-report .skill-transfer-row").filter({ hasText: "direct" }).last();
+  await updateRow.locator(".skill-copy-report-paths > summary").click();
   const backupPath = await updateRow.locator(".skill-path").last().textContent();
   assert.ok(backupPath);
   assert.equal(await fs.readFile(path.join(backupPath, "SKILL.md"), "utf8"), "user edit to preserve\n");
   assert.equal(await fs.readFile(path.join(destination, "direct/SKILL.md"), "utf8"), sources.direct);
+  await page.getByRole("dialog").getByRole("button", { name: "关闭", exact: true }).click();
 
   // The rendered cleanup flow moves the exact installed item and restores it without overwriting.
   await page.getByRole("button", { name: "重新扫描", exact: true }).click();
   await expect(page.getByRole("button", { name: "重新扫描", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "OpenCode", exact: true }).click();
+  await page.getByRole("tab", { name: /^OpenCode/ }).click();
   const directRow = rows.filter({ has: page.getByRole("button", { name: /^direct/ }) });
   await directRow.getByRole("button", { name: "移入回收区 direct" }).click();
   await expect(dialog.getByText("暂无清理建议", { exact: true })).toBeVisible();
@@ -111,7 +117,8 @@ try {
   await assert.rejects(() => fs.stat(path.join(destination, "direct")), /ENOENT/);
   await expect(page.getByText(/本次清理结果：1 项已移入回收区/)).toBeVisible();
   if (process.env.NETWORK_LENS_SKILL_SHOTS_DIR) await page.screenshot({ path: path.join(process.env.NETWORK_LENS_SKILL_SHOTS_DIR, "skill-trash-results.png") });
-  await page.locator(".skill-restore-button").click();
+  await page.locator(".skill-trash-panel > summary").click();
+  await page.locator(".skill-trash-row").filter({ hasText: "direct" }).getByRole("button", { name: "恢复", exact: true }).click();
   await expect(page.getByText(/已恢复 direct 到/)).toBeVisible();
   assert.equal(await fs.readFile(path.join(destination, "direct/SKILL.md"), "utf8"), sources.direct);
 
@@ -126,13 +133,15 @@ try {
   await fs.writeFile(path.join(repairSource, "agents/openai.yaml"), repairMetadata);
   await page.getByRole("button", { name: "重新扫描", exact: true }).click();
   await expect(page.getByRole("button", { name: "重新扫描", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "WisCode", exact: true }).click();
+  await page.getByRole("tab", { name: /^WisCode/ }).click();
   await rows.filter({ has: page.getByRole("button", { name: /^repair / }) }).locator(".skill-row-copy").click();
   await dialog.locator("select").selectOption("wiscode");
   await expect(dialog.getByText("自动修复后复制", { exact: true })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "确认复制（1）", exact: true })).toBeEnabled();
   if (process.env.NETWORK_LENS_SKILL_SHOTS_DIR) await dialog.screenshot({ path: path.join(process.env.NETWORK_LENS_SKILL_SHOTS_DIR, "skill-auto-repair.png") });
   await dialog.getByRole("button", { name: "确认复制（1）", exact: true }).click();
+  await page.getByRole("button", { name: "查看完整结果", exact: false }).click();
+  await page.locator(".skill-verification > summary").click();
   await expect(page.getByText("自动修复：通过", { exact: true })).toBeVisible();
   const repairedMetadata = await fs.readFile(path.join(home, ".wiscode/skills/repair/agents/openai.yaml"), "utf8");
   assert.match(repairedMetadata, /interface:\n  display_name:/);
