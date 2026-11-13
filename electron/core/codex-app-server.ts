@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { constants } from "node:fs";
-import { cliDirectories } from "./tool-discovery";
+import { cliDirectories, needsCommandShell } from "./tool-discovery";
 import { HANDOFF_LIMITS } from "../../src/shared/handoff";
 import { isObject } from "./codex-local-index";
 
@@ -27,7 +27,7 @@ async function checkReadonlyProtocol(binary: string, nativeHome: string) {
       try {
         const env: NodeJS.ProcessEnv = { ...process.env, CODEX_HOME: nativeHome };
         delete env.ELECTRON_RUN_AS_NODE;
-        await execute(binary, ["app-server", "generate-json-schema", "--out", temporary], { env, timeout: 5000, maxBuffer: 128 * 1024, windowsHide: true });
+        await execute(binary, ["app-server", "generate-json-schema", "--out", temporary], { env, timeout: 5000, maxBuffer: 128 * 1024, windowsHide: true, shell: needsCommandShell(binary) });
         const schema = JSON.parse(await fs.readFile(path.join(temporary, "v2", "ThreadListParams.json"), "utf8"));
         // Some old versions ignore unknown fields. Do not assume that passing
         // useStateDbOnly actually disables their scan-and-repair behavior.
@@ -48,7 +48,7 @@ export class CodexAppServer implements CodexReadClient {
   constructor(binary: string, nativeHome: string, args = ["app-server", "--stdio"], private timeoutMs = 12000) {
     const env: NodeJS.ProcessEnv = { ...process.env, CODEX_HOME: nativeHome, PATH: `${path.dirname(binary)}${path.delimiter}${process.env.PATH || ""}` };
     delete env.ELECTRON_RUN_AS_NODE;
-    this.child = spawn(binary, args, { stdio: ["pipe", "pipe", "pipe"], env, windowsHide: true });
+    this.child = spawn(binary, args, { stdio: ["pipe", "pipe", "pipe"], env, windowsHide: true, shell: needsCommandShell(binary) });
     this.child.stderr.on("data", () => {}); // Never expose stderr (may contain local metadata).
     this.child.stdin.on("error", () => this.fail(new Error("Codex 本地接口连接已关闭。")));
     this.child.on("error", () => this.fail(new Error("无法启动 Codex 本地会话接口。")));
@@ -98,10 +98,12 @@ export class CodexAppServer implements CodexReadClient {
   close() { this.fail(new Error("Codex 本地读取已结束。")); }
 }
 export async function connectCodexAppServer(nativeHome: string): Promise<CodexReadClient> {
+  const cliName = process.platform === "win32" ? "codex.exe" : "codex";
+  const shim = "codex.cmd";
   const candidates = [
     path.join(path.dirname(nativeHome), ".local/bin", process.platform === "win32" ? "codex.exe" : "codex"),
     ...(process.platform === "darwin" ? ["/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex", "/Applications/Codex.app/Contents/Resources/codex"] : []),
-    ...(await cliDirectories(path.dirname(nativeHome))).map(dir => path.join(dir, process.platform === "win32" ? "codex.exe" : "codex")),
+    ...(await cliDirectories(path.dirname(nativeHome))).flatMap(dir => process.platform === "win32" ? [path.join(dir, cliName), path.join(dir, shim)] : [path.join(dir, cliName)]),
   ];
   for (const binary of [...new Set(candidates)]) {
     try { await fs.access(binary, constants.X_OK); if (!(await fs.stat(binary)).isFile()) continue; } catch { continue; }

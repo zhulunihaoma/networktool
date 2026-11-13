@@ -207,7 +207,9 @@ export async function inspectIPPaths(
   };
   if (process.platform !== "darwin") {
     report.unavailable =
-      "IPv4/IPv6 隧道路由对照目前仅支持 macOS；其他系统请交由 IT 检查，不生成 macOS 修复命令。";
+      process.platform === "win32"
+        ? "IPv4/IPv6 隧道路由对照与可恢复修复方案目前仅在 macOS 验证；Windows 版会继续提供系统路径与直连探测结果，路由接口对照请交由 IT 检查，不生成修复命令。"
+        : "IPv4/IPv6 隧道路由对照目前仅支持 macOS；其他系统请交由 IT 检查，不生成 macOS 修复命令。";
     return report;
   }
   try {

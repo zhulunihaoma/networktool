@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { constants } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
-import { cliDirectories } from "./tool-discovery";
+import { cliDirectories, needsCommandShell } from "./tool-discovery";
 import { HANDOFF_LIMITS, sanitizer, parseOpenCodeExport, buildHandoffPrompt, type HandoffImport, type HandoffOptions } from "../../src/shared/handoff";
 import type { HandoffPreview, HandoffTarget, SourceTask, SourceTaskPage, SourceTaskQuery, SourceProject } from "../../src/shared/handoff-api";
 import type { HandoffSource } from "../../src/shared/handoff-api";
@@ -232,18 +232,22 @@ export class HandoffManager {
   }
 }
 async function runOpenCode(args: string[]): Promise<string> {
-  if (process.platform === "win32") throw new Error("当前直接读取支持 macOS/Linux；Windows 请导入 OpenCode 导出 JSON。");
+  // Windows ships opencode as a native exe (npm adds a .cmd shim); both can be
+  // read directly. A failed read still lands in the honest catch below.
+  const names =
+    process.platform === "win32" ? ["opencode.exe", "opencode.cmd"] : ["opencode"];
   let binary: string | undefined;
-  for (const dir of await cliDirectories()) {
-    const candidate = path.join(dir, "opencode");
-    try { await fs.access(candidate, constants.X_OK); if ((await fs.stat(candidate)).isFile()) { binary = candidate; break; } } catch {}
-  }
+  outer: for (const dir of await cliDirectories())
+    for (const name of names) {
+      const candidate = path.join(dir, name);
+      try { await fs.access(candidate, constants.X_OK); if ((await fs.stat(candidate)).isFile()) { binary = candidate; break outer; } } catch {}
+    }
   if (!binary) throw new Error("未找到 OpenCode CLI，请导入已导出的 JSON 文件。");
   try {
     const env = { ...process.env, PATH: `${path.dirname(binary)}${path.delimiter}${process.env.PATH || ""}` };
     if (args[0] === "export") return await captureHandoffExport(binary, args, { env });
     const { stdout } = await execute(binary, args, { timeout: 30_000, maxBuffer: LIMIT,
-      env, encoding: "utf8", windowsHide: true });
+      env, encoding: "utf8", windowsHide: true, shell: needsCommandShell(binary) });
     return stdout;
   } catch {
     // stderr may include transcript, paths or credentials. Never forward it to renderer.

@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { HANDOFF_LIMITS } from "../../src/shared/handoff";
+import { needsCommandShell } from "./tool-discovery";
 
 /** A regular stdout file avoids CLI exit() dropping the tail of large piped JSON.
  * Private scratch data is bounded, read only after process completion, and removed.
@@ -18,7 +19,7 @@ export async function captureHandoffExport(binary: string, args: string[], optio
   const handle = await fs.open(file, "wx+", 0o600);
   try {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(binary, args, { env: options.env, stdio: ["ignore", handle.fd, "ignore"], windowsHide: true });
+      const child = spawn(binary, args, { env: options.env, stdio: ["ignore", handle.fd, "ignore"], windowsHide: true, shell: needsCommandShell(binary) });
       let failure: Error | undefined;
       const stop = (reason: string) => { failure ||= new Error(reason); child.kill("SIGKILL"); };
       const deadline = setTimeout(() => stop("OpenCode 导出超时。"), options.timeoutMs ?? 30000);

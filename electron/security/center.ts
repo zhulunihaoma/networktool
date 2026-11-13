@@ -574,6 +574,17 @@ export class SecurityCenter {
     return () => clearInterval(timer);
   }
   private version(tool: SecurityTool): string | undefined {
+    if (process.platform === "win32") {
+      // Windows installers record versions under the uninstall registry, not a
+      // bundle plist. Read-only DisplayName/DisplayVersion lookup, never any
+      // uninstall string or binary execution.
+      const app = { zcode: "ZCode", dsh: "DeepSeek Harness", wiscode: "WisCode" }[
+        tool as "zcode" | "dsh" | "wiscode"
+      ];
+      if (!app) return undefined;
+      if (!this.winVersions) this.winVersions = this.readWinVersions();
+      return this.winVersions[app];
+    }
     const plist = (app: string) => {
       try {
         const text = fs.readFileSync(
@@ -591,6 +602,41 @@ export class SecurityCenter {
     if (tool === "dsh") return plist("DeepSeek Harness");
     if (tool === "wiscode") return plist("WisCode");
     return undefined;
+  }
+  private winVersions?: Record<string, string | undefined>;
+  private readWinVersions(): Record<string, string | undefined> {
+    try {
+      const result = spawnSync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "$roots=@('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*','HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*','HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'); Get-ItemProperty -Path $roots -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match '^(ZCode|DeepSeek Harness|WisCode)( |$)' } | Select-Object DisplayName,DisplayVersion | ConvertTo-Json -Compress",
+        ],
+        { timeout: 8000, windowsHide: true, encoding: "utf8" },
+      );
+      const raw = (result.stdout || "").trim();
+      if (!raw) return {};
+      const parsed: unknown = JSON.parse(raw);
+      const rows = Array.isArray(parsed) ? parsed : [parsed];
+      const versions: Record<string, string | undefined> = {};
+      for (const row of rows) {
+        const record = row as { DisplayName?: unknown; DisplayVersion?: unknown };
+        if (typeof record?.DisplayName !== "string") continue;
+        const name = record.DisplayName.split(" ")[0];
+        if (
+          ["ZCode", "DeepSeek", "WisCode"].includes(name) &&
+          typeof record.DisplayVersion === "string" &&
+          record.DisplayVersion.length <= 100
+        )
+          versions[name === "DeepSeek" ? "DeepSeek Harness" : name] =
+            record.DisplayVersion;
+      }
+      return versions;
+    } catch {
+      return {};
+    }
   }
   tools(): ToolStatus[] {
     const events = timeline(this.options.dataDir, { limit: 1000 }).events;

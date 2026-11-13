@@ -649,9 +649,29 @@ export const wiscodeAdapter: Adapter = {
   nextSteps: [],
   warnings: [],
   detect(ctx) {
+    // Windows installers land under Program Files or the per-user Programs
+    // directory; only the presence of the executable is checked, never run.
+    const windowsApp =
+      process.platform === "win32"
+        ? [
+            path.join(
+              process.env["ProgramFiles"] || "C:\\Program Files",
+              "WisCode",
+              "WisCode.exe",
+            ),
+            path.join(
+              process.env["LOCALAPPDATA"] ||
+                path.join(ctx.home, "AppData", "Local"),
+              "Programs",
+              "WisCode",
+              "WisCode.exe",
+            ),
+          ].some((file) => exists(file))
+        : false;
     const installed =
       exists(path.join(ctx.home, ".wiscode")) ||
-      exists("/Applications/WisCode.app");
+      exists("/Applications/WisCode.app") ||
+      windowsApp;
     return {
       installed,
       state: installed ? "unsupported" : "absent",

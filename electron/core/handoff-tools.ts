@@ -2,11 +2,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { discoverKnownTools, type DiscoveredTool } from "./tool-registry";
+import { appDataRoot } from "./history-sources";
 import { HANDOFF_SOURCES, handoffToolLabel, type HandoffTarget, type HandoffTool } from "../../src/shared/handoff-api";
 
 export const copilotRoots = (home: string) => [
   path.join(home, ".roo-cline/globalStorage/ultra-ai.copilotcodepro/tasks"),
-  path.join(home, "Library/Application Support/Code/User/globalStorage/geelib-copilot-code.copilotcodepro/tasks"),
+  path.join(appDataRoot(home, "Code"), "User/globalStorage/geelib-copilot-code.copilotcodepro/tasks"),
 ];
 const products: Record<HandoffTarget, string[]> = {
   OpenCode: ["opencode"], Codex: ["codex", "chatgpt"], ClaudeCode: ["claude-code"], WorkBuddy: ["workbuddy"],
@@ -27,10 +28,10 @@ export async function discoverHandoffTools(home = os.homedir(), discover: () => 
     WisCode: await populated(path.join(home, ".wiscode/claude-agents/projects")) || await populated(path.join(home, ".wiscode/claude/projects")) || await exists(path.join(home, ".wiscode/codex-agents/state_5.sqlite")),
     DeepSeekHarness: await populated(path.join(home, ".dsh/sessions")), CopilotCode: (await Promise.all(copilotRoots(home).map(populated))).some(Boolean),
     GeminiCLI: await populated(path.join(home, ".gemini/sessions")) || await populated(path.join(home, ".gemini/tmp")),
-    VSCode: await populated(path.join(home, "Library/Application Support/Code/User/workspaceStorage")),
-    Cursor: await exists(path.join(home, "Library/Application Support/Cursor/User/globalStorage/state.vscdb")),
-    Windsurf: await populated(path.join(home, "Library/Application Support/Windsurf/User")),
-    Trae: await populated(path.join(home, "Library/Application Support/Trae/User")),
+    VSCode: await populated(path.join(appDataRoot(home, "Code"), "User/workspaceStorage")),
+    Cursor: await exists(path.join(appDataRoot(home, "Cursor"), "User/globalStorage/state.vscdb")),
+    Windsurf: await populated(path.join(appDataRoot(home, "Windsurf"), "User")),
+    Trae: await populated(path.join(appDataRoot(home, "Trae"), "User")),
   };
   const out: HandoffTool[] = [];
   for (const id of Object.keys(products) as HandoffTarget[]) {

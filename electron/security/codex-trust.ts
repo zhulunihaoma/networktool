@@ -31,12 +31,13 @@ export class CodexTrustClient extends CodexAppServer implements TrustRpc {
   }
 }
 export async function connectTrustClient(home: string): Promise<TrustRpc> {
+  const cliName = process.platform === "win32" ? "codex.exe" : "codex";
   const candidates = [
     ...(process.platform === "darwin" ? [
       "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
       "/Applications/Codex.app/Contents/Resources/codex",
     ] : []),
-    ...(await cliDirectories(home)).map(dir => path.join(dir, process.platform === "win32" ? "codex.exe" : "codex")),
+    ...(await cliDirectories(home)).flatMap(dir => process.platform === "win32" ? [path.join(dir, cliName), path.join(dir, "codex.cmd")] : [path.join(dir, cliName)]),
   ];
   for (const binary of [...new Set(candidates)]) {
     try { fs.accessSync(binary, fs.constants.X_OK); if (!fs.statSync(binary).isFile()) continue; } catch { continue; }

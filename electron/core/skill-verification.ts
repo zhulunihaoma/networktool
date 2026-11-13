@@ -5,7 +5,7 @@ import os from "node:os";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import type { SkillCheck } from "../../src/shared/skills";
-import { cliDirectories } from "./tool-discovery";
+import { cliDirectories, needsCommandShell } from "./tool-discovery";
 
 const run = promisify(execFile);
 export type SkillDiscovery = { check: SkillCheck; entries?: { name: string; location: string }[] };
@@ -19,7 +19,7 @@ async function readDiscovery(executable: string, home: string) {
   const handle = await fs.open(output, "wx", 0o600);
   try {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(executable, ["debug", "skill"], { cwd: home, env: commandEnvironment(executable), stdio: ["ignore", handle.fd, "ignore"], windowsHide: true });
+      const child = spawn(executable, ["debug", "skill"], { cwd: home, env: commandEnvironment(executable), stdio: ["ignore", handle.fd, "ignore"], windowsHide: true, shell: needsCommandShell(executable) });
       const timer = setTimeout(() => { child.kill("SIGKILL"); }, 10000);
       child.once("error", error => { clearTimeout(timer); reject(error); });
       child.once("close", (code, signal) => {
@@ -73,13 +73,15 @@ export const discoverOpenCode: SkillProbe = async (home) => {
   if (await fs.realpath(home).catch(() => home) !== await fs.realpath(os.homedir()).catch(() => os.homedir())) return unavailable("隔离目录未连接真实 OpenCode，仅做规则检查");
   const directories = await cliDirectories(home);
   let executable: string | undefined;
-  for (const directory of directories) {
-    const candidate = path.join(directory, process.platform === "win32" ? "opencode.exe" : "opencode");
-    try { await fs.access(candidate, constants.X_OK); if ((await fs.stat(candidate)).isFile()) { executable = candidate; break; } } catch { /* next candidate */ }
-  }
+  const names = process.platform === "win32" ? ["opencode.exe", "opencode.cmd"] : ["opencode"];
+  outer: for (const directory of directories)
+    for (const name of names) {
+      const candidate = path.join(directory, name);
+      try { await fs.access(candidate, constants.X_OK); if ((await fs.stat(candidate)).isFile()) { executable = candidate; break outer; } } catch { /* next candidate */ }
+    }
   if (!executable) return unavailable("未找到 OpenCode CLI；目录存在不代表工具已安装");
   try {
-    const { stdout: versionText } = await run(executable, ["--version"], { cwd: home, env: commandEnvironment(executable), timeout: 3000, maxBuffer: 64 * 1024, windowsHide: true });
+    const { stdout: versionText } = await run(executable, ["--version"], { cwd: home, env: commandEnvironment(executable), timeout: 3000, maxBuffer: 64 * 1024, windowsHide: true, shell: needsCommandShell(executable) });
     const version = versionText.match(/\b\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?\b/)?.[0];
     const stdout = await readDiscovery(executable, home);
     let entries: unknown;

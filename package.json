@@ -45,7 +45,7 @@
     "appId": "dev.networklens.desktop",
     "productName": "360AI盒子",
     "artifactName": "360AI盒子-${version}-${os}-${arch}.${ext}",
-    "icon": "src/assets/brand-mark.svg",
+    "icon": "build/icon.png",
     "directories": {
       "output": "release"
     },
@@ -60,7 +60,7 @@
     },
     "win": {
       "target": "nsis",
-      "signAndEditExecutable": false
+      "signExecutable": false
     },
     "nsis": {
       "oneClick": false,

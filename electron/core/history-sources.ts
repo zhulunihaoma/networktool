@@ -64,6 +64,17 @@ function field(
 export interface HistoryRoots {
   [source: string]: string[];
 }
+/** Per-user app-data root for Electron-family tools (VS Code / Cursor / Windsurf / Trae). */
+export function appDataRoot(home: string, app: string) {
+  return process.platform === "darwin"
+    ? path.join(home, "Library/Application Support", app)
+    : process.platform === "win32"
+      ? path.join(
+          process.env.APPDATA || path.join(home, "AppData", "Roaming"),
+          app,
+        )
+      : path.join(home, ".config", app);
+}
 export class HistorySources {
   constructor(
     readonly home = os.homedir(),
@@ -1516,7 +1527,7 @@ export class HistorySources {
       }
     } else if (source === "Cursor")
       for (const user of bases(source, [
-        path.join(this.home, "Library/Application Support/Cursor/User"),
+        path.join(appDataRoot(this.home, "Cursor"), "User"),
       ]))
         await attempt("Cursor", async () => {
           const dbfile = path.join(user, "globalStorage/state.vscdb"),
@@ -1677,12 +1688,7 @@ export class HistorySources {
     else {
       // Never advertise a discovered installation as a verified history adapter.
       const name = source === "Windsurf" ? "Windsurf" : "Trae";
-      const user = path.join(
-        this.home,
-        "Library/Application Support",
-        name,
-        "User",
-      );
+      const user = path.join(appDataRoot(this.home, name), "User");
       if ((await entries(user)).length)
         gaps.push(
           `${source} 已发现用户数据；原生项目、会话和上下文格式尚未验证，未将未知数据当作空历史。`,

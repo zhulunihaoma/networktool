@@ -169,7 +169,9 @@ export async function runDoctor(
   ] as const) {
     progress(0, GROUPS[0]);
     const f = await read(tool, rel);
-    if (f && f.mode & 0o077)
+    // NTFS maps file mode onto a read-only flag; the group/other bits are not
+    // meaningful there, so the POSIX permission check only runs on unix.
+    if (f && f.mode & 0o077 && process.platform !== "win32")
       add(
         tool,
         `permissions:${hash(rel)}`,
@@ -321,7 +323,8 @@ export async function runDoctor(
       "zcode",
       "plaintext",
       "ZCode 配置包含明文密钥",
-      zcode.mode & 0o077 ? "high" : "low",
+      // Windows cannot express POSIX permission bits; never inflate the level there.
+      zcode.mode & 0o077 && process.platform !== "win32" ? "high" : "low",
       "检测到 apiKey 字段（值已隐藏）",
       "限制文件权限并考虑使用安全凭据存储",
       "secret",
@@ -352,7 +355,8 @@ export async function runDoctor(
     try {
       const stat = await fs.lstat(file);
       if (stat.isSymbolicLink() || !stat.isFile()) continue;
-      if (stat.mode & 0o077) {
+      // Same NTFS caveat as above: skip the POSIX bits check on Windows.
+      if (stat.mode & 0o077 && process.platform !== "win32") {
         findings.push({
           id: `system:common:${hash(rel)}`,
           tool: "system",

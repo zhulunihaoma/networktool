@@ -8,6 +8,10 @@ import { promisify } from "node:util";
 import { TOOL_PRODUCTS } from "../../src/shared/assistant";
 import type { DiscoveredTool } from "./tool-registry";
 const execute = promisify(execFile);
+/** npm installs Windows CLIs as .cmd shims; Node refuses to spawn them without a shell. */
+export function needsCommandShell(binary: string) {
+  return process.platform === "win32" && /\.(cmd|bat)$/i.test(binary);
+}
 export async function readBundleInfo(
   location: string,
 ): Promise<Record<string, unknown>> {
@@ -156,12 +160,28 @@ export async function cliDirectories(
     path.join(home, ".claude/local/node_modules/.bin"),
   );
   if (process.platform === "win32") {
-    if (process.env.APPDATA) dirs.push(path.join(process.env.APPDATA, "npm"));
+    const appdata = process.env.APPDATA || path.join(home, "AppData", "Roaming");
+    const local = process.env.LOCALAPPDATA || path.join(home, "AppData", "Local");
+    dirs.push(
+      path.join(appdata, "npm"),
+      path.join(local, "pnpm"),
+      path.join(local, "Yarn/bin"),
+    );
   } else dirs.push("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin");
-  for (const root of [
+  const nvmWindowsRoot =
+    process.platform === "win32"
+      ? process.env.NVM_HOME || path.join(home, "AppData", "Roaming", "nvm")
+      : "";
+  const versionRoots = [
     path.join(home, ".nvm/versions/node"),
     path.join(home, ".local/share/fnm/node-versions"),
-  ]) {
+  ];
+  if (nvmWindowsRoot) {
+    // nvm-windows keeps node.exe and npm shims directly inside each version
+    // directory; fnm uses <version>\installation without a bin segment.
+    versionRoots.push(nvmWindowsRoot, path.join(home, "AppData", "Roaming", "fnm", "node-versions"));
+  }
+  for (const root of versionRoots) {
     try {
       const entries = await fs.readdir(root, { withFileTypes: true });
       for (const entry of entries.filter((e) => e.isDirectory()).slice(0, 40))
@@ -169,7 +189,13 @@ export async function cliDirectories(
           path.join(
             root,
             entry.name,
-            root.includes("fnm") ? "installation/bin" : "bin",
+            root.includes("fnm")
+              ? process.platform === "win32"
+                ? "installation"
+                : "installation/bin"
+              : root === nvmWindowsRoot
+                ? ""
+                : "bin",
           ),
         );
     } catch {}
